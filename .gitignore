@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+docs/*
+!docs/uploads/.gitkeep
+*.jsonl
+*.pdf
+*.docx

@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Longevity Intelligence Platform (LIP)</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --bg-glow: radial-gradient(circle at 15% 0%, rgba(56, 189, 248, 0.12), transparent 45%),
+                 radial-gradient(circle at 85% 10%, rgba(129, 140, 248, 0.12), transparent 40%);
+      --panel: rgba(15, 23, 42, 0.72);
+      --panel-solid: #0f172a;
+      --panel-hover: rgba(30, 41, 59, 0.85);
+      --ink: #f8fafc;
+      --muted: #94a3b8;
+      --line: rgba(148, 163, 184, 0.16);
+      --line-bright: rgba(56, 189, 248, 0.38);
+      --cyan: #38bdf8;
+      --cyan-soft: rgba(56, 189, 248, 0.14);
+      --indigo: #818cf8;
+      --indigo-soft: rgba(129, 140, 248, 0.15);
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.14);
+      --amber: #fbbf24;
+      --amber-soft: rgba(251, 191, 36, 0.14);
+      --purple: #c084fc;
+      --purple-soft: rgba(192, 132, 252, 0.14);
+      --danger: #f87171;
+      --danger-soft: rgba(248, 113, 113, 0.14);
+      --radius: 16px;
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      background-image: var(--bg-glow);
+      background-attachment: fixed;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    button, input { font: inherit; color: inherit; }
+
+    /* Shell */
+    .shell { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 256px;
+      flex: none;
+      background: rgba(10, 15, 29, 0.88);
+      backdrop-filter: blur(18px);
+      border-right: 1px solid var(--line);
+      padding: 20px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 30;
+    }
+    .sidebar-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      padding: 4px 12px 12px;
+      line-height: 1.45;
+    }
+    .nav { display: flex; flex-direction: column; gap: 4px; }
+    .nav button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 500;
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .nav button:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+    .nav button.active {
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(129, 140, 248, 0.08));
+      border-color: rgba(56, 189, 248, 0.35);
+      color: var(--ink);
+      font-weight: 650;
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.12);
+    }
+    .nav-icon { width: 18px; text-align: center; font-size: 15px; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 14px 12px 4px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .health-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #475569; display: inline-block; }
+    .dot.on { background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .dot.off { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+
+    /* Top Bar + Main */
+    .content-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(7, 11, 20, 0.8);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--line);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .menu-btn {
+      display: none;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 7px 11px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .search-box { position: relative; max-width: 320px; width: 100%; }
+    .search-box input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 12px;
+      padding: 8px 12px 8px 34px;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .search-box input::placeholder { color: #64748b; }
+    .search-box input:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15); }
+    .search-box::before {
+      content: "⌕";
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .ai-pill {
+      border: 1px solid rgba(129, 140, 248, 0.45);
+      background: linear-gradient(135deg, #4f46e5, #0ea5e9);
+      color: #fff;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+      white-space: nowrap;
+    }
+    .ai-pill:hover { filter: brightness(1.1); }
+    .upload-btn {
+      background: rgba(56, 189, 248, 0.14);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: var(--cyan);
+      font-weight: 600;
+      font-size: 13px;
+      border-radius: 999px;
+      padding: 8px 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .upload-btn:hover { background: rgba(56, 189, 248, 0.24); }
+    .upload-btn input { display: none; }
+    .upload-btn.busy { opacity: 0.5; pointer-events: none; }
+
+    .main { padding: 24px 28px 56px; max-width: 1280px; width: 100%; margin: 0 auto; }
+
+    /* Headers */
+    .crumb { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .page-title-wrap { display: flex; align-items: center; gap: 14px; }
+    .app-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      flex: none;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.35);
+    }
+    h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .badge-inline {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      background: var(--cyan-soft);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 3px 9px;
+      border-radius: 999px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 680px; }
+    .link-btn {
+      border: 0;
+      background: transparent;
+      color: var(--cyan);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+    .link-btn:hover { text-decoration: underline; }
+
+    /* Glass Cards */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 24px 0 10px;
+    }
+    .card {
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .maturity-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .maturity-num {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin: 4px 0;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .bar-track { height: 8px; background: rgba(148, 163, 184, 0.14); border-radius: 999px; overflow: hidden; margin-top: 14px; }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #0ea5e9, #818cf8);
+      border-radius: 999px;
+      transition: width 0.35s ease;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+    }
+
+    /* Grids */
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .comp-card {
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .comp-card:hover { border-color: var(--line-bright); transform: translateY(-2px); background: var(--panel-hover); }
+    .comp-head { display: flex; justify-content: space-between; align-items: flex-start; }
+    .comp-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: var(--indigo-soft);
+      border: 1px solid rgba(129, 140, 248, 0.3);
+      display: grid;
+      place-items: center;
+      font-size: 17px;
+    }
+    .comp-title { font-weight: 700; font-size: 15px; margin: 0; }
+    .comp-desc { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .metric-item span {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .metric-item strong { font-size: 18px; font-weight: 700; color: var(--ink); }
+
+    /* Architecture Flow */
+    .arch-flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .arch-node {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .arch-node strong { display: block; font-size: 13px; color: var(--cyan); }
+    .arch-node span { font-size: 11px; color: var(--muted); }
+
+    /* IP Assets vs Apps */
+    .asset-row { margin-bottom: 14px; }
+    .asset-row:last-child { margin-bottom: 0; }
+    .asset-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .app-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 8px;
+      background: rgba(15, 23, 42, 0.45);
+    }
+    .app-row:last-child { margin-bottom: 0; }
+    .status-pill {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.14);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .status-pill.live { background: var(--green-soft); color: var(--green); }
+    .status-pill.progress { background: var(--cyan-soft); color: var(--cyan); }
+
+    /* Dual Progress Bars */
+    .progress-panel {
+      background: var(--panel);
+      border: 1px solid var(--line-bright);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .progress-panel[hidden] { display: none; }
+    .progress-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 650; margin-bottom: 6px; }
+    .progress-track { height: 8px; background: rgba(148, 163, 184, 0.16); border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; width: 0%; background: var(--green); border-radius: 999px; transition: width 0.25s ease; }
+    .progress-fill.processing { background: linear-gradient(90deg, #38bdf8, #818cf8); }
+    .progress-fill.error { background: var(--danger); }
+    .progress-sub { font-size: 11px; color: var(--muted); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Responsive 11-Stage Pipeline */
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .stage {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      min-height: 68px;
+    }
+    .stage .num { font-size: 10px; color: var(--muted); font-weight: 700; }
+    .stage .name { display: block; margin-top: 2px; font-size: 12px; font-weight: 650; }
+    .stage .detail { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stage.active { border-color: var(--cyan); background: var(--cyan-soft); }
+    .stage.done { border-color: rgba(52, 211, 153, 0.45); background: var(--green-soft); }
+    .stage.skipped { opacity: 0.45; }
+    .stage.error { border-color: var(--danger); background: var(--danger-soft); }
+
+    /* Semantic Search Panel */
+    .semantic-form {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .semantic-form input {
+      flex: 1;
+      min-width: 220px;
+      border: 1px solid var(--line);
+      background: rgba(7, 11, 20, 0.7);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--ink);
+    }
+    .semantic-form input:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+    }
+    .semantic-results {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .hit-card {
+      background: rgba(15, 23, 42, 0.62);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--cyan);
+      border-radius: 12px;
+      padding: 14px 16px;
+      transition: border-color 0.15s ease;
+    }
+    .hit-card:hover { border-color: var(--line-bright); }
+    .hit-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .hit-source { font-size: 13px; font-weight: 650; color: var(--ink); }
+    .hit-badges { display: flex; align-items: center; gap: 8px; }
+    .score-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: var(--green);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+    }
+    .chunk-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--indigo-soft);
+      color: var(--indigo);
+    }
+    .hit-text {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Responsive Tables */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+      background: rgba(15, 23, 42, 0.65);
+    }
+    td.detail { color: #cbd5e1; max-width: 420px; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      background: var(--green-soft);
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 650;
+    }
+    .tag.kpi { background: var(--amber-soft); color: var(--amber); }
+    .tag.intervention { background: var(--purple-soft); color: var(--purple); }
+    .approve-btn {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(148, 163, 184, 0.14);
+      color: var(--muted);
+    }
+    .approve-btn.yes { background: var(--green-soft); color: var(--green); border-color: rgba(52, 211, 153, 0.4); }
+    .del-btn {
+      border: 1px solid rgba(248, 113, 113, 0.4);
+      background: var(--danger-soft);
+      color: var(--danger);
+      border-radius: 8px;
+      padding: 5px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .empty { padding: 26px 14px; color: var(--muted); text-align: center; }
+
+    /* Knowledge Graph */
+    .diagram-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(15, 23, 42, 0.55);
+    }
+    .diagram-legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+    .legend-swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+    .diagram-btn {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--ink);
+      border-radius: 8px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .diagram-btn:hover { background: rgba(255, 255, 255, 0.12); }
+    .diagram-canvas {
+      padding: 22px;
+      background: radial-gradient(rgba(148, 163, 184, 0.15) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    .diagram-stage { position: relative; width: 100%; }
+    .diagram-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 1; }
+    .diagram-columns {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 72px;
+      row-gap: 20px;
+      align-items: start;
+    }
+    .diagram-col { display: flex; flex-direction: column; gap: 12px; }
+    .col-heading {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--line);
+    }
+    .col-heading.dim { border-color: var(--green); color: var(--green); }
+    .col-heading.kpi { border-color: var(--amber); color: var(--amber); }
+    .col-heading.int { border-color: var(--purple); color: var(--purple); }
+    .diagram-node {
+      text-align: left;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--green);
+      border-radius: 12px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .diagram-node.kpi { border-left-color: var(--amber); }
+    .diagram-node.intervention { border-left-color: var(--purple); }
+    .diagram-node:hover { border-color: var(--line-bright); transform: translateY(-1px); }
+    .diagram-node .node-title { display: block; font-size: 13px; font-weight: 600; color: var(--ink); word-break: break-word; }
+    .diagram-node.selected { background: var(--green-soft); border-color: var(--green); box-shadow: 0 0 18px rgba(52, 211, 153, 0.2); }
+    .diagram-node.kpi.selected { background: var(--amber-soft); border-color: var(--amber); box-shadow: 0 0 18px rgba(251, 191, 36, 0.2); }
+    .diagram-node.intervention.selected { background: var(--purple-soft); border-color: var(--purple); box-shadow: 0 0 18px rgba(192, 132, 252, 0.2); }
+    .diagram-node.dimmed { opacity: 0.25; }
+
+    /* API Catalog */
+    .method { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; min-width: 54px; text-align: center; }
+    .method.get { background: var(--cyan-soft); color: var(--cyan); }
+    .method.post { background: var(--green-soft); color: var(--green); }
+    .method.delete { background: var(--danger-soft); color: var(--danger); }
+    code { color: var(--cyan); font-size: 12.5px; }
+
+    /* Toasts & AI Drawer */
+    .toast-container {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: min(360px, calc(100vw - 32px));
+    }
+    .toast {
+      background: #0f172a;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--green);
+      border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.info { border-left-color: var(--cyan); }
+    .toast strong { display: block; font-size: 13px; }
+    .toast p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .toast button { border: 0; background: transparent; cursor: pointer; color: var(--muted); }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100vh;
+      width: min(420px, 100vw);
+      background: #0b1120;
+      border-left: 1px solid var(--line);
+      box-shadow: -12px 0 36px rgba(0, 0, 0, 0.5);
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+      display: flex;
+      flex-direction: column;
+      z-index: 40;
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer header { padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+    .drawer header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .bubble { max-width: 90%; padding: 10px 13px; border-radius: 14px; white-space: pre-wrap; font-size: 13px; }
+    .bubble.user { align-self: flex-end; background: linear-gradient(135deg, #0ea5e9, #6366f1); color: #fff; }
+    .bubble.assistant { align-self: flex-start; background: rgba(30, 41, 59, 0.85); border: 1px solid var(--line); color: var(--ink); }
+    .composer { padding: 14px; display: flex; gap: 8px; border-top: 1px solid var(--line); }
+    .composer input { flex: 1; border: 1px solid var(--line); background: #0f172a; border-radius: 10px; padding: 9px 12px; }
+    .composer button { border: 0; background: var(--cyan); color: #070b14; border-radius: 10px; padding: 9px 14px; font-weight: 700; cursor: pointer; }
+
+    .mobile-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); z-index: 25; }
+    .mobile-backdrop.open { display: block; }
+
+    /* Responsive Breakpoints — ZERO Horizontal Scroll */
+    @media (max-width: 1080px) {
+      .grid-4, .arch-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 860px) {
+      .menu-btn { display: inline-flex; }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        transform: translateX(-100%);
+        transition: transform 0.22s ease;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .main { padding: 16px 14px 48px; }
+      .topbar { padding: 10px 14px; }
+      .grid-4, .grid-2, .progress-panel, .arch-flow { grid-template-columns: 1fr; }
+
+      .diagram-columns { grid-template-columns: 1fr; column-gap: 0; }
+      .diagram-lines { display: none; }
+
+      table.responsive-table thead { display: none; }
+      table.responsive-table, table.responsive-table tbody, table.responsive-table tr, table.responsive-table td {
+        display: block;
+        width: 100%;
+      }
+      table.responsive-table tr {
+        padding: 14px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(15, 23, 42, 0.45);
+      }
+      table.responsive-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 6px 0;
+        border: 0;
+        max-width: none;
+        text-align: right;
+      }
+      table.responsive-table td::before {
+        content: attr(data-label);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        text-align: left;
+        flex: none;
+      }
+      table.responsive-table td.empty { display: block; text-align: center; }
+      table.responsive-table td.empty::before { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="mobile-backdrop" id="mobile-backdrop"></div>
+
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-label">Longevity Intelligence<br>Platform</div>
+      <nav class="nav">
+        <button type="button" class="active" data-view="home"><span class="nav-icon">🧠</span>LIP — Platform Home</button>
+        <button type="button" data-view="ontology"><span class="nav-icon">🕸️</span>Ontology &amp; KG</button>
+        <button type="button" data-view="corpus"><span class="nav-icon">📄</span>Corpus &amp; Repository</button>
+        <button type="button" data-view="ai"><span class="nav-icon">⚗️</span>Longevity AI Layer</button>
+        <button type="button" data-view="apps"><span class="nav-icon">🚀</span>Applications &amp; API</button>
+        <button type="button" data-view="catalog"><span class="nav-icon">📘</span>API Catalog</button>
+        <button type="button" data-view="roadmap"><span class="nav-icon">📈</span>Roadmap</button>
+        <button type="button" data-view="analytics"><span class="nav-icon">📊</span>Analytics</button>
+      </nav>
+      <div class="sidebar-footer" id="status">
+        <div class="health-row"><span>PostgreSQL</span><i class="dot"></i></div>
+        <div class="health-row"><span>FalkorDB</span><i class="dot"></i></div>
+        <div class="health-row"><span>Ollama qwen3:8b</span><i class="dot"></i></div>
+      </div>
+    </aside>
+
+    <div class="content-wrap">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+          <div class="search-box">
+            <input id="global-search" type="search" placeholder="Filter dimensions, KPIs, interventions…">
+          </div>
+        </div>
+        <div class="topbar-right">
+          <label class="upload-btn" id="upload-label">
+            + Upload PDF
+            <input id="file" type="file" accept="application/pdf,.pdf">
+          </label>
+          <button type="button" class="ai-pill" id="open-chat">✦ AI Assistant</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="progress-panel" id="progress-panel" hidden>
+          <div>
+            <div class="progress-head"><span>1. File Upload</span><span id="upload-pct">0%</span></div>
+            <div class="progress-track"><div class="progress-fill" id="upload-bar"></div></div>
+            <div class="progress-sub" id="upload-sub">Waiting…</div>
+          </div>
+          <div>
+            <div class="progress-head"><span>2. Document Processing</span><span id="process-pct">0%</span></div>
+            <div class="progress-track"><div class="progress-fill processing" id="process-bar"></div></div>
+            <div class="progress-sub" id="process-sub">Waiting for upload…</div>
+          </div>
+        </section>
+
+        <!-- VIEW 1: PLATFORM HOME -->
+        <section id="view-home">
+          <div class="crumb">Dashboard &rsaquo; Longevity Intelligence Platform</div>
+          <div class="page-head">
+            <div class="page-title-wrap">
+              <div class="app-badge">⬡</div>
+              <div>
+                <h1>Longevity Intelligence Platform <span class="badge-inline">LIP · v1.0</span></h1>
+                <p class="subtitle">Four-component platform powering longevity intelligence: ontology, corpus, local AI, and mobile-ready APIs.</p>
+              </div>
+            </div>
+            <button type="button" class="link-btn" data-jump="roadmap">View roadmap &rarr;</button>
+          </div>
+
+          <div class="card">
+            <div class="maturity-top">
+              <div>
+                <div class="section-label" style="margin:0;">Platform Maturity</div>
+                <div class="maturity-num" id="m-maturity">0%</div>
+                <div class="subtitle" style="margin:0;">Average maturity across the four LIP components. Each exposes its own versioned API.</div>
+              </div>
+              <span style="font-size:12px; color:var(--cyan);">🚀 Target: Longevity SLM v1 · Open-Source</span>
+            </div>
+            <div class="bar-track"><div class="bar-fill" id="m-maturity-bar" style="width:0%"></div></div>
+          </div>
+
+          <div class="section-label">Component Health</div>
+          <div class="grid-4">
+            <article class="comp-card" data-jump="ontology">
+              <div class="comp-head"><div class="comp-icon">🕸️</div><span style="color:var(--cyan)">&rarr;</span></div>
+              <div><h3 class="comp-title">Ontology &amp; Knowledge Graph</h3><p class="comp-desc">Concepts, KPIs, interventions, relationships</p></div>
+              <div class="metric-grid">
+                <div class="metric-item"><span>Entities</span><strong id="m-entities">0</strong></div>
+                <div class="metric-item"><span>Relationships</span><strong id="m-rels">0</strong></div>
+                <div class="metric-item"><span>Coverage</span><strong id="m-cov">0%</strong></div>
+                <div class="metric-item"><span>Roadmap</span><strong id="m-ont-road">0%</strong></div>
+              </div>
+            </article>
+
+            <article class="comp-card" data-jump="corpus">
+              <div class="comp-head"><div class="comp-icon">📄</div><span style="color:var(--cyan)">&rarr;</span></div>
+              <div><h3 class="comp-title">Corpus &amp; Repository</h3><p class="comp-desc">Documents, 11-stage pipeline, semantic search</p></div>
+              <div class="metric-grid">
+                <div class="metric-item"><span>Documents</span><strong id="m-docs">0</strong></div>
+                <div class="metric-item"><span>Tokens</span><strong id="m-tokens">0</strong></div>
+                <div class="metric-item"><span>Pages</span><strong id="m-pages">0</strong></div>
+                <div class="metric-item"><span>Avg Quality</span><strong id="m-qual">0</strong></div>
+              </div>
+            </article>
+
+            <article class="comp-card" data-jump="ai">
+              <div class="comp-head"><div class="comp-icon">⚗️</div><span style="color:var(--cyan)">&rarr;</span></div>
+              <div><h3 class="comp-title">Longevity AI Layer</h3><p class="comp-desc">Local models, citations, SLM readiness</p></div>
+              <div class="metric-grid">
+                <div class="metric-item"><span>Models</span><strong id="m-models">0</strong></div>
+                <div class="metric-item"><span>Evaluations</span><strong id="m-evals">0</strong></div>
+                <div class="metric-item"><span>Avg Score</span><strong id="m-score">0</strong></div>
+                <div class="metric-item"><span>Roadmap</span><strong id="m-ai-road">0%</strong></div>
+              </div>
+            </article>
+
+            <article class="comp-card" data-jump="apps">
+              <div class="comp-head"><div class="comp-icon">🚀</div><span style="color:var(--cyan)">&rarr;</span></div>
+              <div><h3 class="comp-title">Applications &amp; API</h3><p class="comp-desc">Web console &amp; mobile app consumers</p></div>
+              <div class="metric-grid">
+                <div class="metric-item"><span>API Calls</span><strong id="m-calls">0</strong></div>
+                <div class="metric-item"><span>Avg Latency</span><strong id="m-lat">0ms</strong></div>
+                <div class="metric-item"><span>Error Rate</span><strong id="m-err">0.0%</strong></div>
+                <div class="metric-item"><span>Roadmap</span><strong id="m-app-road">0%</strong></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="section-label">Architecture &amp; Interactions</div>
+          <div class="card">
+            <div class="arch-flow">
+              <div class="arch-node"><strong>1. Ontology &amp; KG</strong><span>FalkorDB · Concepts</span></div>
+              <div class="arch-node"><strong>2. Corpus &amp; Repo</strong><span>PostgreSQL · pgvector</span></div>
+              <div class="arch-node"><strong>3. Longevity AI</strong><span>Ollama · qwen3 + nomic</span></div>
+              <div class="arch-node"><strong>4. Applications</strong><span>Web &amp; Mobile API</span></div>
+            </div>
+          </div>
+
+          <div class="section-label">Platform IP Assets vs Applications</div>
+          <div class="grid-2">
+            <div class="card">
+              <div class="section-label" style="margin-top:0;">Platform IP Assets</div>
+              <div class="asset-row"><div class="asset-head"><span>Longevity Ontology</span><span id="ip-ont">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="ip-ont-bar" style="width:0%"></div></div></div>
+              <div class="asset-row"><div class="asset-head"><span>Knowledge Graph</span><span id="ip-kg">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="ip-kg-bar" style="width:0%"></div></div></div>
+              <div class="asset-row"><div class="asset-head"><span>Corpus &amp; Evidence</span><span id="ip-cor">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="ip-cor-bar" style="width:0%"></div></div></div>
+              <div class="asset-row"><div class="asset-head"><span>Future Longevity SLM</span><span>15%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" style="width:15%"></div></div></div>
+            </div>
+            <div class="card">
+              <div class="section-label" style="margin-top:0;">Applications</div>
+              <div class="app-row"><div><strong>LIP Web Console</strong><div class="comp-desc">Uses: Ontology · Corpus · AI Layer</div></div><span class="status-pill live">LIVE</span></div>
+              <div class="app-row"><div><strong>Mobile App (iOS / Android)</strong><div class="comp-desc">Uses: Versioned REST API + CORS</div></div><span class="status-pill progress">API READY</span></div>
+              <div class="app-row"><div><strong>Research &amp; Policy Apps</strong><div class="comp-desc">Uses: Knowledge Graph · Citations</div></div><span class="status-pill">PLANNED</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 2: ONTOLOGY & KG -->
+        <section id="view-ontology" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Ontology &amp; Knowledge Graph</h1>
+              <p class="subtitle">Tap any node to highlight its connected pathway, or approve/reject extractions below to sync FalkorDB.</p>
+            </div>
+          </div>
+          <div class="card" style="padding:0; overflow:hidden; margin-bottom:20px;">
+            <div class="diagram-toolbar">
+              <div class="diagram-legend">
+                <span class="legend-item"><i class="legend-swatch" style="background:var(--green)"></i>Dimension</span>
+                <span class="legend-item"><i class="legend-swatch" style="background:var(--amber)"></i>KPI</span>
+                <span class="legend-item"><i class="legend-swatch" style="background:var(--purple)"></i>Intervention</span>
+              </div>
+              <button type="button" class="diagram-btn" id="reset-diagram">Reset</button>
+            </div>
+            <div class="diagram-canvas">
+              <div class="diagram-stage" id="diagram-stage">
+                <svg class="diagram-lines" id="diagram-lines"></svg>
+                <div class="diagram-columns" id="diagram-columns"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-label">Extracted Entities &amp; Human-in-the-Loop Governance</div>
+          <div class="card" style="padding:0; overflow:hidden;">
+            <table class="responsive-table">
+              <thead><tr><th>Type</th><th>Name</th><th>Detail &amp; Evidence</th><th>Link</th><th>Status</th><th>Document</th></tr></thead>
+              <tbody id="extractions"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- VIEW 3: CORPUS & REPOSITORY -->
+        <section id="view-corpus" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Corpus &amp; Repository</h1>
+              <p class="subtitle">11-stage ingestion pipeline, pgvector semantic search, and document management.</p>
+            </div>
+          </div>
+          <section class="pipeline" id="pipeline"></section>
+          <p id="banner" style="font-size:13px; color:var(--cyan); margin:0 0 18px;">Ready to ingest longevity PDFs.</p>
+
+          <!-- Semantic Search Panel -->
+          <div class="section-label" style="margin-top:0;">Semantic Corpus Search (pgvector · nomic-embed-text)</div>
+          <div class="card" style="margin-bottom:20px;">
+            <form class="semantic-form" id="semantic-form">
+              <input id="semantic-input" type="search" placeholder="Search by meaning (e.g., healthy ageing policy, primary care, intrinsic capacity)…" autocomplete="off">
+              <button type="submit" class="ai-pill" id="semantic-btn">⌕ Semantic Search</button>
+            </form>
+            <div class="semantic-results" id="semantic-results">
+              <div class="empty" style="padding:10px 0;">Enter a topic or question to retrieve the most relevant passages across your indexed PDFs.</div>
+            </div>
+          </div>
+
+          <div class="section-label">Ingested Documents</div>
+          <div class="card" style="padding:0; overflow:hidden;">
+            <table class="responsive-table">
+              <thead><tr><th>Document</th><th>Pages</th><th>Dimensions</th><th>KPIs</th><th>Interventions</th><th>Action</th></tr></thead>
+              <tbody id="documents"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- VIEW 4: LONGEVITY AI LAYER -->
+        <section id="view-ai" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Longevity AI Layer</h1>
+              <p class="subtitle">Local hybrid RAG inference powered by Ollama with strict document-level source citations.</p>
+            </div>
+            <button type="button" class="ai-pill" id="open-chat-2">✦ Open AI Assistant</button>
+          </div>
+          <div class="grid-2">
+            <div class="card">
+              <div class="section-label" style="margin-top:0;">Active Local Models</div>
+              <h2 style="margin:4px 0; color:var(--cyan);">qwen3:8b + nomic-embed-text</h2>
+              <p class="subtitle">Running locally on Apple Silicon via Ollama (<code>http://localhost:11434</code>). Zero external data leakage.</p>
+            </div>
+            <div class="card">
+              <div class="section-label" style="margin-top:0;">Hybrid Grounding Policy</div>
+              <p class="subtitle" style="margin-top:6px;">Answers combine <strong>approved</strong> PostgreSQL extractions with top <code>pgvector</code> semantic passages and mandatory <code>[document.pdf]</code> citations.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 5: APPLICATIONS & API -->
+        <section id="view-apps" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Applications &amp; API</h1>
+              <p class="subtitle">Live API telemetry and mobile-app readiness (CORS enabled for iOS, Android, and external clients).</p>
+            </div>
+          </div>
+          <div class="grid-4">
+            <div class="card"><div class="metric-item"><span>Total API Calls</span><strong id="a-calls">0</strong></div></div>
+            <div class="card"><div class="metric-item"><span>Avg Latency</span><strong id="a-lat">0ms</strong></div></div>
+            <div class="card"><div class="metric-item"><span>Error Rate</span><strong id="a-err">0.0%</strong></div></div>
+            <div class="card"><div class="metric-item"><span>CORS Status</span><strong style="color:var(--green)">Enabled</strong></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 6: API CATALOG -->
+        <section id="view-catalog" hidden>
+          <div class="page-head">
+            <div>
+              <h1>API Catalog</h1>
+              <p class="subtitle">Versioned JSON endpoints ready for web and mobile app integration.</p>
+            </div>
+            <a href="/docs" target="_blank" class="link-btn" style="text-decoration:none;">Open Swagger Docs &rarr;</a>
+          </div>
+          <div class="card" style="padding:0; overflow:hidden;">
+            <table class="responsive-table">
+              <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr></thead>
+              <tbody>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/metrics</code></td><td data-label="Purpose">Live platform maturity, component health, and telemetry</td></tr>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/health</code></td><td data-label="Purpose">Connectivity status for PostgreSQL, FalkorDB, and Ollama</td></tr>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/search?q=...</code></td><td data-label="Purpose">Semantic vector search across indexed PDF chunks via pgvector</td></tr>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/documents</code></td><td data-label="Purpose">List ingested PDFs with page and extraction counts</td></tr>
+                <tr><td data-label="Method"><span class="method post">POST</span></td><td data-label="Endpoint"><code>/api/upload</code></td><td data-label="Purpose">Upload a PDF and trigger the 11-stage background pipeline</td></tr>
+                <tr><td data-label="Method"><span class="method delete">DELETE</span></td><td data-label="Endpoint"><code>/api/documents/{sha256}</code></td><td data-label="Purpose">Delete a document and its nodes from PostgreSQL &amp; FalkorDB</td></tr>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/extractions</code></td><td data-label="Purpose">Retrieve all extracted Dimensions, KPIs, and Interventions</td></tr>
+                <tr><td data-label="Method"><span class="method post">POST</span></td><td data-label="Endpoint"><code>/api/extractions/approve</code></td><td data-label="Purpose">Toggle human-in-the-loop approval and sync FalkorDB</td></tr>
+                <tr><td data-label="Method"><span class="method get">GET</span></td><td data-label="Endpoint"><code>/api/graph</code></td><td data-label="Purpose">Return approved nodes and edges from FalkorDB</td></tr>
+                <tr><td data-label="Method"><span class="method post">POST</span></td><td data-label="Endpoint"><code>/api/chat</code></td><td data-label="Purpose">Query local Ollama model grounded in extractions + vector passages</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- VIEW 7: ROADMAP -->
+        <section id="view-roadmap" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Component Roadmap Progress</h1>
+              <p class="subtitle">Live progress across the four LIP pillars.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="asset-row"><div class="asset-head"><span>Ontology &amp; Knowledge Graph</span><span id="r-ont">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="r-ont-bar" style="width:0%"></div></div></div>
+            <div class="asset-row"><div class="asset-head"><span>Corpus &amp; Repository</span><span id="r-cor">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="r-cor-bar" style="width:0%"></div></div></div>
+            <div class="asset-row"><div class="asset-head"><span>Longevity AI Layer</span><span id="r-ai">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="r-ai-bar" style="width:0%"></div></div></div>
+            <div class="asset-row"><div class="asset-head"><span>Applications &amp; API Layer</span><span id="r-app">0%</span></div><div class="bar-track" style="margin-top:0;"><div class="bar-fill" id="r-app-bar" style="width:0%"></div></div></div>
+          </div>
+        </section>
+
+        <!-- VIEW 8: ANALYTICS -->
+        <section id="view-analytics" hidden>
+          <div class="page-head">
+            <div>
+              <h1>Analytics</h1>
+              <p class="subtitle">Live breakdown of your longevity knowledge base.</p>
+            </div>
+          </div>
+          <div class="grid-4">
+            <div class="card"><div class="metric-item"><span>Dimensions</span><strong id="count-dimensions">0</strong></div></div>
+            <div class="card"><div class="metric-item"><span>KPIs</span><strong id="count-kpis">0</strong></div></div>
+            <div class="card"><div class="metric-item"><span>Interventions</span><strong id="count-interventions">0</strong></div></div>
+            <div class="card"><div class="metric-item"><span>Est. Corpus Tokens</span><strong id="an-tokens">0</strong></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <aside class="drawer" id="drawer" aria-label="AI Assistant">
+    <header>
+      <div><strong>AI Assistant</strong><p>qwen3:8b · grounded in extractions + pgvector</p></div>
+      <button type="button" class="diagram-btn" id="close-chat">Close</button>
+    </header>
+    <div class="messages" id="messages">
+      <div class="bubble assistant">Ask about any approved dimension, KPI, intervention, or passage in your corpus.</div>
+    </div>
+    <form class="composer" id="chat-form">
+      <input id="chat-input" placeholder="Ask a question…" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+  </aside>
+
+  <script>
+    const STAGES = ["Receive", "Validate", "Fingerprint", "Deduplicate", "Parse", "Chunk", "Extract", "Normalize", "Store", "Graph", "Publish"];
+    const VIEWS = ["home", "ontology", "corpus", "ai", "apps", "catalog", "roadmap", "analytics"];
+    let pollTimer = 0;
+    let graphData = { nodes: [], edges: [] };
+    let allExtractions = [];
+    let selectedNodeId = null;
+
+    function esc(v) {
+      return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function showToast(title, message, type = "success") {
+      const box = document.getElementById("toast-container");
+      const el = document.createElement("div");
+      el.className = `toast ${type}`;
+      el.innerHTML = `<div><strong>${esc(title)}</strong><p>${esc(message)}</p></div><button type="button">✕</button>`;
+      const close = () => el.remove();
+      el.querySelector("button").addEventListener("click", close);
+      box.appendChild(el);
+      setTimeout(close, type === "error" ? 8000 : 5000);
+    }
+
+    function closeMobileMenu() {
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("mobile-backdrop").classList.remove("open");
+    }
+
+    function show(view) {
+      VIEWS.forEach((v) => { document.getElementById("view-" + v).hidden = v !== view; });
+      document.querySelectorAll(".nav button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+      closeMobileMenu();
+      if (view === "ontology") loadGraph();
+      if (view === "home" || view === "roadmap" || view === "apps" || view === "analytics") loadMetrics();
+    }
+
+    function setUploadProgress(pct, sub, state = "") {
+      document.getElementById("progress-panel").hidden = false;
+      const bar = document.getElementById("upload-bar");
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      bar.className = "progress-fill" + (state ? " " + state : "");
+      document.getElementById("upload-pct").textContent = `${Math.round(pct)}%`;
+      if (sub !== undefined) document.getElementById("upload-sub").textContent = sub;
+    }
+
+    function setProcessProgress(pct, sub, state = "processing") {
+      document.getElementById("progress-panel").hidden = false;
+      const bar = document.getElementById("process-bar");
+      bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+      bar.className = "progress-fill" + (state ? " " + state : "");
+      document.getElementById("process-pct").textContent = `${Math.round(pct)}%`;
+      if (sub !== undefined) document.getElementById("process-sub").textContent = sub;
+    }
+
+    function computeProcessingPercent(job) {
+      if (job.status === "done") return 100;
+      const stages = job.stages || [];
+      if (!stages.length) return 0;
+      let done = 0;
+      for (const s of stages) {
+        if (s.state === "done" || s.state === "skipped") done += 1;
+        else if (s.state === "active") {
+          const m = /Chunk\s+(\d+)\/(\d+)/i.exec(s.detail || "");
+          done += m ? Math.max(0.1, (Number(m[1]) - 0.5) / Math.max(1, Number(m[2]))) : 0.35;
+        }
+      }
+      return Math.min(99, (done / stages.length) * 100);
+    }
+
+    function stageMarkup(stages) {
+      const items = stages || STAGES.map((name, i) => ({ id: i + 1, name, state: "pending", detail: "" }));
+      document.getElementById("pipeline").innerHTML = items.map((s) => `
+        <article class="stage ${s.state || ""}">
+          <span class="num">${String(s.id).padStart(2, "0")}</span>
+          <span class="name">${esc(s.name)}</span>
+          <span class="detail">${esc(s.detail || s.state || "pending")}</span>
+        </article>
+      `).join("");
+    }
+
+    async function loadHealth() {
+      const res = await fetch("/api/health");
+      const d = await res.json();
+      const flags = [d.postgres.ok, d.falkordb.ok, d.ollama.ok];
+      document.querySelectorAll("#status .dot").forEach((dot, i) => { dot.className = "dot " + (flags[i] ? "on" : "off"); });
+    }
+
+    async function loadMetrics() {
+      const res = await fetch("/api/metrics");
+      if (!res.ok) return;
+      const m = await res.json();
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      const bar = (id, pct) => { const el = document.getElementById(id); if (el) el.style.width = `${pct}%`; };
+
+      set("m-maturity", `${m.maturity}%`); bar("m-maturity-bar", m.maturity);
+      set("m-entities", m.ontology.entities.toLocaleString());
+      set("m-rels", m.ontology.relationships.toLocaleString());
+      set("m-cov", `${m.ontology.coverage}%`);
+      set("m-ont-road", `${m.ontology.roadmap}%`);
+
+      set("m-docs", m.corpus.documents.toLocaleString());
+      set("m-tokens", m.corpus.tokens.toLocaleString());
+      set("an-tokens", m.corpus.tokens.toLocaleString());
+      set("m-pages", m.corpus.pages.toLocaleString());
+      set("m-qual", m.corpus.avg_quality);
+
+      set("m-models", m.ai_layer.models);
+      set("m-evals", m.ai_layer.evaluations);
+      set("m-score", m.ai_layer.avg_score);
+      set("m-ai-road", `${m.ai_layer.roadmap}%`);
+
+      set("m-calls", m.applications.api_calls); set("a-calls", m.applications.api_calls);
+      set("m-lat", `${m.applications.avg_latency_ms}ms`); set("a-lat", `${m.applications.avg_latency_ms}ms`);
+      set("m-err", `${m.applications.error_rate}%`); set("a-err", `${m.applications.error_rate}%`);
+      set("m-app-road", `${m.applications.roadmap}%`);
+
+      set("ip-ont", `${m.ontology.roadmap}%`); bar("ip-ont-bar", m.ontology.roadmap);
+      set("ip-kg", `${m.ontology.coverage}%`); bar("ip-kg-bar", m.ontology.coverage);
+      set("ip-cor", `${m.corpus.roadmap}%`); bar("ip-cor-bar", m.corpus.roadmap);
+
+      set("r-ont", `${m.ontology.roadmap}%`); bar("r-ont-bar", m.ontology.roadmap);
+      set("r-cor", `${m.corpus.roadmap}%`); bar("r-cor-bar", m.corpus.roadmap);
+      set("r-ai", `${m.ai_layer.roadmap}%`); bar("r-ai-bar", m.ai_layer.roadmap);
+      set("r-app", `${m.applications.roadmap}%`); bar("r-app-bar", m.applications.roadmap);
+    }
+
+    function kindClass(k) { return k === "KPI" ? "kpi" : k === "Intervention" ? "intervention" : ""; }
+
+    function renderExtractions(filterText = "") {
+      const q = filterText.trim().toLowerCase();
+      const items = q
+        ? allExtractions.filter((i) => `${i.kind} ${i.name} ${i.detail} ${i.extra} ${i.document}`.toLowerCase().includes(q))
+        : allExtractions;
+
+      const body = document.getElementById("extractions");
+      body.innerHTML = items.length ? items.map((item) => `
+        <tr>
+          <td data-label="Type"><span class="tag ${kindClass(item.kind)}">${esc(item.kind)}</span></td>
+          <td data-label="Name"><strong>${esc(item.name)}</strong></td>
+          <td data-label="Detail" class="detail">${esc(item.detail || "—")}</td>
+          <td data-label="Link">${esc(item.extra || "—")}</td>
+          <td data-label="Status">
+            <button type="button" class="approve-btn ${item.approved ? "yes" : ""}"
+              data-kind="${esc(item.kind)}" data-name="${esc(item.name)}" data-sha="${esc(item.sha256)}"
+              data-approved="${item.approved ? "true" : "false"}">${item.approved ? "Approved" : "Rejected"}</button>
+          </td>
+          <td data-label="Document">${esc(item.document)}</td>
+        </tr>
+      `).join("") : `<tr><td class="empty" colspan="6">No matching extractions found.</td></tr>`;
+
+      body.querySelectorAll(".approve-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const next = btn.dataset.approved !== "true";
+          btn.disabled = true;
+          try {
+            const res = await fetch("/api/extractions/approve", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: btn.dataset.kind, name: btn.dataset.name, sha256: btn.dataset.sha, approved: next }),
+            });
+            if (!res.ok) throw new Error("Update failed");
+            showToast(next ? "Approved" : "Rejected", `${btn.dataset.kind}: ${btn.dataset.name}`, next ? "success" : "info");
+            await loadAll();
+          } catch (err) {
+            showToast("Error", err.message, "error");
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    async function loadData() {
+      const [extRes, docRes] = await Promise.all([fetch("/api/extractions"), fetch("/api/documents")]);
+      const extData = extRes.ok ? await extRes.json() : { items: [] };
+      const docData = docRes.ok ? await docRes.json() : { documents: [] };
+      allExtractions = extData.items || [];
+
+      const counts = { Dimension: 0, KPI: 0, Intervention: 0 };
+      allExtractions.forEach((i) => { counts[i.kind] = (counts[i.kind] || 0) + 1; });
+      document.getElementById("count-dimensions").textContent = counts.Dimension;
+      document.getElementById("count-kpis").textContent = counts.KPI;
+      document.getElementById("count-interventions").textContent = counts.Intervention;
+
+      renderExtractions(document.getElementById("global-search").value);
+
+      const docs = docData.documents || [];
+      const docBody = document.getElementById("documents");
+      docBody.innerHTML = docs.length ? docs.map((d) => `
+        <tr>
+          <td data-label="Document"><strong>${esc(d.name)}</strong></td>
+          <td data-label="Pages">${d.pages}</td>
+          <td data-label="Dimensions">${d.dimensions}</td>
+          <td data-label="KPIs">${d.kpis}</td>
+          <td data-label="Interventions">${d.interventions}</td>
+          <td data-label="Action"><button type="button" class="del-btn" data-sha="${esc(d.sha256)}" data-name="${esc(d.name)}">Delete</button></td>
+        </tr>
+      `).join("") : `<tr><td class="empty" colspan="6">No documents ingested yet. Click "+ Upload PDF" to begin.</td></tr>`;
+
+      docBody.querySelectorAll(".del-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Delete "${btn.dataset.name}" and its extracted nodes?`)) return;
+          const res = await fetch(`/api/documents/${encodeURIComponent(btn.dataset.sha)}`, { method: "DELETE" });
+          if (res.ok) {
+            showToast("Document Deleted", btn.dataset.name, "info");
+            await loadAll();
+          } else {
+            showToast("Delete Failed", "Could not remove document.", "error");
+          }
+        });
+      });
+    }
+
+    function getConnectedSet(startId) {
+      const adj = new Map();
+      (graphData.edges || []).forEach((e) => {
+        const s = String(e.source), t = String(e.target);
+        if (!adj.has(s)) adj.set(s, new Set());
+        if (!adj.has(t)) adj.set(t, new Set());
+        adj.get(s).add(t); adj.get(t).add(s);
+      });
+      const visited = new Set([String(startId)]), queue = [String(startId)];
+      while (queue.length) {
+        const curr = queue.shift();
+        for (const n of adj.get(curr) || []) if (!visited.has(n)) { visited.add(n); queue.push(n); }
+      }
+      return visited;
+    }
+
+    function drawConnections() {
+      const stage = document.getElementById("diagram-stage");
+      const svg = document.getElementById("diagram-lines");
+      if (!stage || !svg || window.innerWidth <= 860) return;
+      const sr = stage.getBoundingClientRect();
+      if (!sr.width || !sr.height) return;
+      svg.setAttribute("width", sr.width);
+      svg.setAttribute("height", sr.height);
+
+      const conn = selectedNodeId !== null ? getConnectedSet(selectedNodeId) : null;
+      const paths = [];
+      (graphData.edges || []).forEach((edge) => {
+        const sId = String(edge.source), tId = String(edge.target);
+        const elA = stage.querySelector(`[data-node-id="${CSS.escape(sId)}"]`);
+        const elB = stage.querySelector(`[data-node-id="${CSS.escape(tId)}"]`);
+        if (!elA || !elB) return;
+        const rA = elA.getBoundingClientRect(), rB = elB.getBoundingClientRect();
+        const L = rA.left <= rB.left ? rA : rB, R = rA.left <= rB.left ? rB : rA;
+        const x1 = L.right - sr.left, y1 = L.top + L.height / 2 - sr.top;
+        const x2 = R.left - sr.left, y2 = R.top + R.height / 2 - sr.top;
+        const c = Math.max(30, (x2 - x1) * 0.5);
+        const hi = conn ? (conn.has(sId) && conn.has(tId)) : true;
+        const stroke = hi ? (conn ? "#38bdf8" : "rgba(148,163,184,0.45)") : "rgba(148,163,184,0.12)";
+        paths.push(`
+          <g opacity="${hi ? 1 : 0.25}">
+            <path d="M ${x1} ${y1} C ${x1 + c} ${y1}, ${x2 - c} ${y2}, ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="${hi && conn ? 2.5 : 1.5}" />
+            <circle cx="${x1}" cy="${y1}" r="3.5" fill="${stroke}" />
+            <circle cx="${x2}" cy="${y2}" r="3.5" fill="${stroke}" />
+          </g>
+        `);
+      });
+      svg.innerHTML = paths.join("");
+    }
+
+    function renderDiagram() {
+      const cols = document.getElementById("diagram-columns");
+      const svg = document.getElementById("diagram-lines");
+      if (!graphData.nodes?.length) {
+        cols.innerHTML = `<p class="empty">No approved nodes in FalkorDB yet.</p>`;
+        svg.innerHTML = "";
+        return;
+      }
+      const conn = selectedNodeId !== null ? getConnectedSet(selectedNodeId) : null;
+      const defs = [
+        { key: "Dimension", title: "Dimensions", css: "dim" },
+        { key: "KPI", title: "KPIs", css: "kpi" },
+        { key: "Intervention", title: "Interventions", css: "int" },
+      ];
+      cols.innerHTML = defs.map((col) => {
+        const items = graphData.nodes.filter((n) => n.label === col.key);
+        return `
+          <div class="diagram-col">
+            <div class="col-heading ${col.css}">${col.title} (${items.length})</div>
+            ${items.map((n) => {
+              const id = String(n.id);
+              const cls = selectedNodeId === null ? "" : (id === String(selectedNodeId) ? "selected" : (conn.has(id) ? "" : "dimmed"));
+              return `<button type="button" class="diagram-node ${kindClass(n.label)} ${cls}" data-node-id="${esc(id)}"><span class="node-title">${esc(n.name)}</span></button>`;
+            }).join("")}
+          </div>
+        `;
+      }).join("");
+
+      cols.querySelectorAll(".diagram-node").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedNodeId = String(selectedNodeId) === btn.dataset.nodeId ? null : btn.dataset.nodeId;
+          renderDiagram();
+        });
+      });
+      requestAnimationFrame(drawConnections);
+    }
+
+    async function loadGraph() {
+      const res = await fetch("/api/graph");
+      if (!res.ok) return;
+      graphData = await res.json();
+      selectedNodeId = null;
+      renderDiagram();
+    }
+
+    async function loadAll() {
+      await Promise.all([loadHealth(), loadMetrics(), loadData()]);
+      if (!document.getElementById("view-ontology").hidden) await loadGraph();
+    }
+
+    async function poll(jobId) {
+      const res = await fetch("/api/jobs/" + jobId);
+      const job = await res.json();
+      stageMarkup(job.stages);
+      const banner = document.getElementById("banner");
+
+      if (job.status === "running") {
+        const active = job.stages.find((s) => s.state === "active");
+        const txt = active ? `${active.name}: ${active.detail}` : "Processing…";
+        banner.textContent = txt;
+        setProcessProgress(computeProcessingPercent(job), txt, "processing");
+        return;
+      }
+
+      clearInterval(pollTimer);
+      document.getElementById("upload-label").classList.remove("busy");
+      if (job.status === "error") {
+        banner.textContent = job.error;
+        setProcessProgress(computeProcessingPercent(job), `Error: ${job.error}`, "error");
+        showToast("Processing Failed", job.error, "error");
+      } else if (job.duplicate) {
+        banner.textContent = "Duplicate PDF detected — already stored.";
+        setProcessProgress(100, "Already stored.", "done");
+        showToast("Already Stored", `${job.filename} is already in your corpus.`, "info");
+      } else {
+        const summary = `Published ${job.counts.dimensions} dimensions, ${job.counts.kpis} KPIs, ${job.counts.interventions} interventions.`;
+        banner.textContent = summary;
+        setProcessProgress(100, summary, "done");
+        showToast("Processing Complete", `${job.filename}: ${summary}`, "success");
+      }
+      await loadAll();
+    }
+
+    document.getElementById("file").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      show("corpus");
+      document.getElementById("upload-label").classList.add("busy");
+      setUploadProgress(0, `Uploading ${file.name}…`);
+      setProcessProgress(0, "Waiting for upload…", "processing");
+
+      const body = new FormData();
+      body.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload");
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (ev.lengthComputable) setUploadProgress((ev.loaded / ev.total) * 100, `Uploading ${file.name}…`);
+      });
+      xhr.addEventListener("load", () => {
+        let p = {};
+        try { p = JSON.parse(xhr.responseText || "{}"); } catch {}
+        if (xhr.status < 200 || xhr.status >= 300) {
+          document.getElementById("upload-label").classList.remove("busy");
+          setUploadProgress(100, p.detail || "Upload failed", "error");
+          showToast("Upload Failed", p.detail || `HTTP ${xhr.status}`, "error");
+          return;
+        }
+        setUploadProgress(100, `Uploaded ${file.name}`, "done");
+        showToast("Upload Complete", `${file.name} uploaded. Running 11-stage pipeline…`, "success");
+        clearInterval(pollTimer);
+        pollTimer = setInterval(() => poll(p.job_id), 800);
+        poll(p.job_id);
+      });
+      xhr.addEventListener("error", () => {
+        document.getElementById("upload-label").classList.remove("busy");
+        setUploadProgress(100, "Network error", "error");
+        showToast("Upload Error", "Check that your FastAPI server is running.", "error");
+      });
+      xhr.send(body);
+    });
+
+    // Semantic Search Handler
+    document.getElementById("semantic-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("semantic-input");
+      const btn = document.getElementById("semantic-btn");
+      const box = document.getElementById("semantic-results");
+      const q = input.value.trim();
+      if (q.length < 2) {
+        showToast("Query Too Short", "Type at least 2 characters to search.", "info");
+        return;
+      }
+      btn.disabled = true;
+      box.innerHTML = `<div class="empty" style="padding:12px 0;">Searching pgvector index with nomic-embed-text…</div>`;
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=6`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const hits = data.results || [];
+        if (!hits.length) {
+          box.innerHTML = `<div class="empty" style="padding:12px 0;">No indexed passages found. Upload a PDF to populate vectors.</div>`;
+        } else {
+          box.innerHTML = hits.map((h) => `
+            <article class="hit-card">
+              <div class="hit-head">
+                <span class="hit-source">📄 ${esc(h.document)}</span>
+                <div class="hit-badges">
+                  <span class="chunk-pill">Chunk ${h.chunk}</span>
+                  <span class="score-pill">${Math.round((h.score || 0) * 100)}% match</span>
+                </div>
+              </div>
+              <p class="hit-text">${esc(h.content)}…</p>
+            </article>
+          `).join("");
+        }
+      } catch (err) {
+        box.innerHTML = `<div class="empty" style="padding:12px 0; color:var(--danger);">Search failed: ${esc(err.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.querySelectorAll(".nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+    document.querySelectorAll("[data-jump]").forEach((el) => el.addEventListener("click", () => show(el.dataset.jump)));
+    document.getElementById("menu-btn").addEventListener("click", () => {
+      document.getElementById("sidebar").classList.toggle("open");
+      document.getElementById("mobile-backdrop").classList.toggle("open");
+    });
+    document.getElementById("mobile-backdrop").addEventListener("click", closeMobileMenu);
+    document.getElementById("reset-diagram").addEventListener("click", () => { selectedNodeId = null; renderDiagram(); });
+    window.addEventListener("resize", () => { if (!document.getElementById("view-ontology").hidden) drawConnections(); });
+
+    document.getElementById("global-search").addEventListener("input", (e) => {
+      renderExtractions(e.target.value);
+      if (e.target.value.trim() && document.getElementById("view-ontology").hidden) show("ontology");
+    });
+
+    const openChat = () => { document.getElementById("drawer").classList.add("open"); document.getElementById("chat-input").focus(); };
+    document.getElementById("open-chat").addEventListener("click", openChat);
+    document.getElementById("open-chat-2").addEventListener("click", openChat);
+    document.getElementById("close-chat").addEventListener("click", () => document.getElementById("drawer").classList.remove("open"));
+
+    document.getElementById("chat-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("chat-input");
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = "";
+      const box = document.getElementById("messages");
+      box.insertAdjacentHTML("beforeend", `<div class="bubble user"></div>`);
+      box.lastElementChild.textContent = msg;
+      box.insertAdjacentHTML("beforeend", `<div class="bubble assistant">Thinking…</div>`);
+      const pending = box.lastElementChild;
+      box.scrollTop = box.scrollHeight;
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg }),
+      });
+      const payload = await res.json();
+      pending.textContent = res.ok ? payload.reply : (payload.detail || "Assistant unavailable.");
+      box.scrollTop = box.scrollHeight;
+    });
+
+    stageMarkup();
+    show("home");
+    loadAll();
+  </script>
+</body>
+</html>
