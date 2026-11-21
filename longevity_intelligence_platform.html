@@ -468,6 +468,174 @@
       box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
     }
 
+
+    /* Rich AI Assistant (Ask LIP) Styles */
+    .chat-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 390px;
+    }
+    .chat-header-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chat-prompts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .prompt-chip {
+      background: #f5f4ef;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .prompt-chip:hover {
+      background: var(--accent-soft);
+      border-color: #7dd3fc;
+      color: var(--accent-text);
+    }
+    .chat-thread {
+      flex: 1;
+      background: #faf9f5;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 220px;
+      max-height: 360px;
+      overflow-y: auto;
+      margin-bottom: 12px;
+    }
+    .chat-msg {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      max-width: 92%;
+    }
+    .chat-msg.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    .chat-msg.bot {
+      align-self: flex-start;
+    }
+    .chat-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .chat-msg.bot .chat-avatar {
+      background: linear-gradient(135deg, #0284c7, #059669);
+      color: #ffffff;
+    }
+    .chat-msg.user .chat-avatar {
+      background: #e2e8f0;
+      color: #334155;
+    }
+    .chat-bubble {
+      padding: 10px 13px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .chat-msg.bot .chat-bubble {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--text-strong);
+      border-top-left-radius: 4px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .chat-msg.user .chat-bubble {
+      background: var(--accent);
+      color: #ffffff;
+      border-top-right-radius: 4px;
+    }
+    .chat-sources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+      padding-top: 7px;
+      border-top: 1px dashed var(--border);
+    }
+    .chat-source-tag {
+      font-size: 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+    .chat-meta-time {
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .chat-msg.user .chat-meta-time {
+      text-align: right;
+    }
+    .chat-composer {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      background: #fdfcfa;
+      border: 1px solid var(--border-strong);
+      border-radius: 11px;
+      padding: 5px 6px 5px 12px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .chat-composer:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+      background: #ffffff;
+    }
+    .chat-composer input {
+      border: none;
+      background: transparent;
+      padding: 6px 2px;
+      box-shadow: none !important;
+      flex: 1;
+      min-width: 0;
+    }
+    .typing-dots {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      padding: 2px 0;
+    }
+    .typing-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: lipBounce 1.2s infinite ease-in-out;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.18s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes lipBounce {
+      0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-3px); }
+    }
+
     /* Responsive zero-horizontal-scroll layout */
     @media (max-width: 820px) {
       header, nav, main { padding-left: 12px; padding-right: 12px; }
@@ -588,14 +756,35 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2>Quick RAG Assistant (Local)</h2>
-          <div class="sub">Answers strictly from approved ontology items and top pgvector passages with source citations.</div>
-          <div class="row">
-            <input id="quick-chat-input" type="text" placeholder="Ask about healthy ageing KPIs, fall prevention, or policies..." onkeydown="if(event.key==='Enter') runChat()" />
-            <button id="btn-chat" class="btn" style="flex:0 0 auto;" onclick="runChat()">Ask LIP</button>
+        <div class="card chat-card">
+          <h2>
+            <span>LIP AI Assistant <span class="badge green" style="margin-left:6px;">Local RAG</span></span>
+            <div class="chat-header-meta">
+              <button class="btn btn-secondary" style="padding:4px 10px;font-size:11.5px;" onclick="clearChat()">Clear</button>
+            </div>
+          </h2>
+          <div class="sub">Conversational Q&amp;A grounded strictly in your approved ontology and pgvector corpus ($0 frontier cost).</div>
+
+          <div class="chat-prompts" id="chat-prompts">
+            <button class="prompt-chip" onclick="usePrompt('What are the key healthy ageing KPIs in our corpus?')">Healthy ageing KPIs</button>
+            <button class="prompt-chip" onclick="usePrompt('Which interventions reduce falls and improve mobility?')">Fall prevention</button>
+            <button class="prompt-chip" onclick="usePrompt('Summarize age-friendly environment policies from our documents.')">Age-friendly policies</button>
           </div>
-          <div id="quick-chat-out" class="output-box" style="display:none;"></div>
+
+          <div id="chat-thread" class="chat-thread">
+            <div class="chat-msg bot">
+              <div class="chat-avatar">LIP</div>
+              <div>
+                <div class="chat-bubble">Hello! I am your local Longevity Intelligence Assistant. Ask me anything about your ingested documents, KPIs, or interventions and I will answer with corpus evidence.</div>
+                <div class="chat-meta-time">Ready · Local SLM</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-composer">
+            <input id="quick-chat-input" type="text" placeholder="Ask LIP about KPIs, interventions, or policies..." onkeydown="if(event.key==='Enter') runChat()" />
+            <button id="btn-chat" class="btn" style="padding:7px 14px;" onclick="runChat()">Send &#8593;</button>
+          </div>
         </div>
       </div>
     </section>
@@ -1435,14 +1624,74 @@
       }
     }
 
+    function nowTime() {
+      return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function appendChatMsg(role, text, sources = []) {
+      const thread = document.getElementById("chat-thread");
+      const wrap = document.createElement("div");
+      wrap.className = "chat-msg " + role;
+
+      const uniqueSources = [...new Set((sources || []).map(s => typeof s === "string" ? s : (s.document || s.name || "")).filter(Boolean))];
+      const sourcesHtml = uniqueSources.length
+        ? `<div class="chat-sources">${uniqueSources.map(s => `<span class="chat-source-tag">&#128196; ${escapeHtml(s)}</span>`).join("")}</div>`
+        : "";
+
+      wrap.innerHTML = `
+        <div class="chat-avatar">${role === "user" ? "YOU" : "LIP"}</div>
+        <div>
+          <div class="chat-bubble">${escapeHtml(text)}${sourcesHtml}</div>
+          <div class="chat-meta-time">${role === "user" ? "You" : "LIP Assistant"} · ${nowTime()}</div>
+        </div>
+      `;
+      thread.appendChild(wrap);
+      thread.scrollTop = thread.scrollHeight;
+      return wrap;
+    }
+
+    function usePrompt(text) {
+      const input = document.getElementById("quick-chat-input");
+      input.value = text;
+      runChat();
+    }
+
+    function clearChat() {
+      const thread = document.getElementById("chat-thread");
+      thread.innerHTML = `
+        <div class="chat-msg bot">
+          <div class="chat-avatar">LIP</div>
+          <div>
+            <div class="chat-bubble">Chat cleared. Ask me anything about your ingested longevity documents, KPIs, or interventions.</div>
+            <div class="chat-meta-time">Ready · Local SLM</div>
+          </div>
+        </div>
+      `;
+    }
+
     async function runChat() {
-      const msg = document.getElementById("quick-chat-input").value.trim();
+      const input = document.getElementById("quick-chat-input");
+      const msg = input.value.trim();
       if (!msg) return;
-      const out = document.getElementById("quick-chat-out");
       const btn = document.getElementById("btn-chat");
+      const thread = document.getElementById("chat-thread");
+
+      input.value = "";
+      appendChatMsg("user", msg);
       btn.disabled = true;
-      out.style.display = "block";
-      out.textContent = "Thinking locally...";
+
+      const typingEl = document.createElement("div");
+      typingEl.className = "chat-msg bot";
+      typingEl.innerHTML = `
+        <div class="chat-avatar">LIP</div>
+        <div>
+          <div class="chat-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>
+          <div class="chat-meta-time">Searching corpus &amp; thinking locally...</div>
+        </div>
+      `;
+      thread.appendChild(typingEl);
+      thread.scrollTop = thread.scrollHeight;
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -1450,9 +1699,16 @@
           body: JSON.stringify({ message: msg })
         });
         const data = await res.json();
-        out.textContent = data.reply || data.detail || "No reply.";
+        typingEl.remove();
+        const reply = data.reply || data.answer || data.detail || "No reply returned.";
+        const sources = data.sources || data.citations || [];
+        appendChatMsg("bot", reply, sources);
+      } catch (e) {
+        typingEl.remove();
+        appendChatMsg("bot", "Unable to reach local /api/chat endpoint. Check that server.py and Ollama are running.");
       } finally {
         btn.disabled = false;
+        input.focus();
         loadMetrics();
       }
     }

@@ -479,10 +479,10 @@ async def track_api_telemetry(request: Request, call_next):
                 telemetry["total_ms"] += elapsed_ms
                 if status >= 400:
                     telemetry["errors"] += 1
-            if path.startswith("/api/v1/"):
+            if path.startswith("/api/v1/") and path not in ("/api/v1/clients", "/api/v1/usage"):
                 tokens_saved = getattr(request.state, "tokens_saved", None)
                 if tokens_saved is None:
-                    tokens_saved = 12000 if ("search" in path or "reason" in path) else 2500
+                    tokens_saved = 12000 if ("search" in path or "reason" in path or "analyze" in path) else 0
                 client_id = getattr(request.state, "client_id", None)
                 _log_usage(client_id, path, status, elapsed_ms, tokens_saved if status < 400 else 0)
     return response
