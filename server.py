@@ -515,10 +515,11 @@ class ReasonRequest(BaseModel):
     user_context: dict[str, Any] | None = None
 
 
-@app.get("/")
 @app.get("/manifest.json")
 def manifest():
     return FileResponse(ROOT / "manifest.json", media_type="application/manifest+json")
+
+@app.get("/")
 def dashboard():
     return FileResponse(DASHBOARD)
 
