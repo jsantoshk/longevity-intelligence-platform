@@ -20,7 +20,7 @@ FALKORDB_HOST = "localhost"
 FALKORDB_PORT = 6379
 FALKORDB_GRAPH = "longevity_kg"
 CHUNK_CHARS = 4000
-MAX_CHUNKS = 8
+MAX_CHUNKS = 32
 
 SYSTEM_PROMPT = """You extract a longevity knowledge graph from a report excerpt.
 The excerpt includes page markers like "--- PAGE 12 ---".
