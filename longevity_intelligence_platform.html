@@ -868,12 +868,35 @@
         <h2>
           Knowledge Graph (FalkorDB)
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-            <span id="graph-hover-info" class="sub" style="margin:0;">Hover a node to highlight edges · Drag to reposition</span>
+            <span id="graph-gap-badge" style="font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:#fef3c7;color:#92400e;display:none;"></span>
+            <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px;" onclick="clearGraphSelection()">Clear Focus</button>
             <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px;" onclick="loadGraph(true)">Reset Layout</button>
           </div>
         </h2>
-        <div class="sub">Structured ontology flow: Dimensions (blue) &rarr; KPIs (emerald) &rarr; Interventions (purple).</div>
-        <canvas id="graphCanvas"></canvas>
+        <div class="sub" style="margin-bottom:10px;">Structured ontology flow: Dimensions (blue) &rarr; KPIs (emerald) &rarr; Interventions (purple). Click any node to trace its full causal chain.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+          <input id="graph-search" type="text" placeholder="Search dimensions, KPIs, interventions..." oninput="applyGraphFilters()" style="flex:1;min-width:220px;padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;" />
+          <div style="display:flex;gap:6px;">
+            <button id="gf-all" class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="setGraphFilter('all')">All</button>
+            <button id="gf-chains" class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="setGraphFilter('chains')">Complete Chains</button>
+            <button id="gf-gaps" class="btn btn-secondary" style="padding:6px 12px;font-size:12px;" onclick="setGraphFilter('gaps')">Gaps (Unlinked)</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+          <div style="flex:1;min-width:300px;position:relative;">
+            <canvas id="graphCanvas"></canvas>
+          </div>
+          <div id="graph-inspector" style="width:310px;max-width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;display:none;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span id="gi-type" style="font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:999px;"></span>
+              <button onclick="clearGraphSelection()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#64748b;">&times;</button>
+            </div>
+            <div id="gi-title" style="font-weight:700;font-size:15px;color:#0f172a;margin-bottom:8px;line-height:1.35;"></div>
+            <div id="gi-gap-alert" style="display:none;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;padding:8px 10px;border-radius:8px;font-size:12px;margin-bottom:10px;"></div>
+            <div id="gi-links" style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;"></div>
+            <button id="gi-ai-btn" class="btn btn-primary" style="width:100%;padding:8px 12px;font-size:12.5px;" onclick="analyzeSelectedNodeInAI()">Analyze Chain in AI Assistant</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -1405,6 +1428,175 @@
       return totalH;
     }
 
+    function _getGraphAdjacency() {
+      const adj = {};
+      (_graphState.allNodes || _graphState.rawNodes || []).forEach(n => { adj[n.id] = new Set(); });
+      (_graphState.edges || []).forEach(e => {
+        if (!adj[e.source]) adj[e.source] = new Set();
+        if (!adj[e.target]) adj[e.target] = new Set();
+        adj[e.source].add(e.target);
+        adj[e.target].add(e.source);
+      });
+      return adj;
+    }
+
+    function _get3HopChain(startId) {
+      const adj = _getGraphAdjacency();
+      const visited = new Set([startId]);
+      let frontier = [startId];
+      for (let depth = 0; depth < 2; depth++) {
+        const next = [];
+        frontier.forEach(id => {
+          (adj[id] || []).forEach(nb => {
+            if (!visited.has(nb)) {
+              visited.add(nb);
+              next.push(nb);
+            }
+          });
+        });
+        frontier = next;
+      }
+      return visited;
+    }
+
+    function _isGapNode(node, adj, nodeById) {
+      const nbs = Array.from(adj[node.id] || []).map(id => nodeById[id]).filter(Boolean);
+      if (node.label === "Dimension") return !nbs.some(n => n.label === "KPI");
+      if (node.label === "KPI") return !nbs.some(n => n.label === "Intervention") || !nbs.some(n => n.label === "Dimension");
+      if (node.label === "Intervention") return !nbs.some(n => n.label === "KPI");
+      return nbs.length === 0;
+    }
+
+    function setGraphFilter(mode) {
+      _graphState.filter = mode;
+      ["all", "chains", "gaps"].forEach(m => {
+        const btn = document.getElementById("gf-" + m);
+        if (btn) btn.className = (m === mode) ? "btn btn-primary" : "btn btn-secondary";
+      });
+      applyGraphFilters();
+    }
+
+    function clearGraphSelection() {
+      _graphState.selected = null;
+      const panel = document.getElementById("graph-inspector");
+      if (panel) panel.style.display = "none";
+      renderGraphCanvas();
+    }
+
+    function inspectGraphNode(node) {
+      _graphState.selected = node;
+      const panel = document.getElementById("graph-inspector");
+      if (!panel || !node) return;
+      panel.style.display = "block";
+
+      const colors = {
+        Dimension: { bg: "#e0f2fe", fg: "#0369a1" },
+        KPI: { bg: "#d1fae5", fg: "#047857" },
+        Intervention: { bg: "#ede9fe", fg: "#6d28d9" }
+      };
+      const c = colors[node.label] || { bg: "#f1f5f9", fg: "#475569" };
+      const typeEl = document.getElementById("gi-type");
+      typeEl.textContent = node.label;
+      typeEl.style.background = c.bg;
+      typeEl.style.color = c.fg;
+      document.getElementById("gi-title").textContent = node.name;
+
+      const allNodes = _graphState.allNodes || _graphState.rawNodes || [];
+      const nodeById = Object.fromEntries(allNodes.map(n => [n.id, n]));
+      const adj = _getGraphAdjacency();
+      const chainIds = _get3HopChain(node.id);
+      const chainNodes = Array.from(chainIds).map(id => nodeById[id]).filter(n => n && n.id !== node.id);
+
+      const dims = chainNodes.filter(n => n.label === "Dimension");
+      const kpis = chainNodes.filter(n => n.label === "KPI");
+      const ints = chainNodes.filter(n => n.label === "Intervention");
+
+      const gapEl = document.getElementById("gi-gap-alert");
+      if (_isGapNode(node, adj, nodeById)) {
+        gapEl.style.display = "block";
+        if (node.label === "Dimension") gapEl.textContent = "Gap Detected: This Dimension has no linked KPIs.";
+        else if (node.label === "KPI") gapEl.textContent = "Gap Detected: This KPI is missing a linked Dimension or Intervention.";
+        else gapEl.textContent = "Gap Detected: This Intervention is not linked to any KPI.";
+      } else {
+        gapEl.style.display = "none";
+      }
+
+      const renderGroup = (title, items, dotColor) => {
+        if (!items.length) return "";
+        const rows = items.map(it =>
+          `<div onclick="focusNodeById('${it.id.replace(/'/g, "\\'")}')" style="cursor:pointer;padding:5px 8px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;margin-top:4px;display:flex;align-items:center;gap:6px;">
+            <span style="width:7px;height:7px;border-radius:50%;background:${dotColor};flex-shrink:0;"></span>
+            <span style="color:#1e293b;line-height:1.3;">${it.name}</span>
+          </div>`
+        ).join("");
+        return `<div><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">${title} (${items.length})</div>${rows}</div>`;
+      };
+
+      const linksHtml = [
+        renderGroup("Linked Dimensions", dims, "#0284c7"),
+        renderGroup("Linked KPIs", kpis, "#059669"),
+        renderGroup("Linked Interventions", ints, "#7c3aed")
+      ].filter(Boolean).join("") || '<div style="color:#64748b;font-style:italic;">No connected nodes in FalkorDB.</div>';
+
+      document.getElementById("gi-links").innerHTML = linksHtml;
+      renderGraphCanvas();
+    }
+
+    function focusNodeById(id) {
+      const target = (_graphState.nodes || []).find(n => n.id === id) || (_graphState.allNodes || []).find(n => n.id === id);
+      if (target) inspectGraphNode(target);
+    }
+
+    function analyzeSelectedNodeInAI() {
+      const node = _graphState.selected;
+      if (!node) return;
+      const prompt = `Analyze the longevity knowledge graph chain for ${node.label} "${node.name}". Summarize the supporting evidence from our documents, identify any missing KPIs or interventions (gaps), and recommend concrete actions.`;
+      const chatInput = document.querySelector("#tab-assistant textarea, #tab-assistant input[type='text'], #chatInput, #ai-question");
+      const assistantBtn = document.querySelector("[data-tab='assistant'], [onclick*='assistant']");
+      if (assistantBtn) assistantBtn.click();
+      if (chatInput) {
+        chatInput.value = prompt;
+        chatInput.focus();
+      } else if (navigator.clipboard) {
+        navigator.clipboard.writeText(prompt);
+        alert("Prompt copied to clipboard—paste it in the AI Assistant tab!");
+      }
+    }
+
+    function applyGraphFilters() {
+      const allNodes = _graphState.allNodes || [];
+      const nodeById = Object.fromEntries(allNodes.map(n => [n.id, n]));
+      const adj = _getGraphAdjacency();
+      const mode = _graphState.filter || "all";
+      const q = (document.getElementById("graph-search")?.value || "").trim().toLowerCase();
+
+      const gapCount = allNodes.filter(n => _isGapNode(n, adj, nodeById)).length;
+      const badge = document.getElementById("graph-gap-badge");
+      if (badge) {
+        badge.style.display = gapCount > 0 ? "inline-block" : "none";
+        badge.textContent = `${gapCount} Gap${gapCount === 1 ? "" : "s"} Detected`;
+      }
+
+      let filtered = allNodes;
+      if (mode === "gaps") {
+        filtered = allNodes.filter(n => _isGapNode(n, adj, nodeById));
+      } else if (mode === "chains") {
+        filtered = allNodes.filter(n => !_isGapNode(n, adj, nodeById));
+      }
+
+      if (q) {
+        const directMatches = filtered.filter(n => n.name.toLowerCase().includes(q));
+        const keepIds = new Set();
+        directMatches.forEach(m => {
+          _get3HopChain(m.id).forEach(id => keepIds.add(id));
+        });
+        filtered = filtered.filter(n => keepIds.has(n.id));
+      }
+
+      _graphState.rawNodes = filtered;
+      resizeAndRenderGraph();
+    }
+
     function renderGraphCanvas() {
       const canvas = document.getElementById("graphCanvas");
       if (!canvas) return;
@@ -1413,11 +1605,11 @@
       const H = canvas.height;
       ctx.clearRect(0, 0, W, H);
 
-      const { nodes, edges, hovered, compact } = _graphState;
+      const { nodes, edges, hovered, selected, compact } = _graphState;
       if (!nodes.length) {
         ctx.fillStyle = "#64748b";
         ctx.font = "13px sans-serif";
-        ctx.fillText("No approved nodes in FalkorDB yet.", 20, 42);
+        ctx.fillText("No nodes match the current filter.", 20, 42);
         return;
       }
 
@@ -1442,44 +1634,22 @@
           ctx.fillText(c.label, c.x, 24);
         });
         ctx.textAlign = "left";
-      } else {
-        const seen = new Set();
-        const headerMeta = {
-          Dimension: { label: "DIMENSIONS", color: "#0284c7" },
-          KPI: { label: "KPIs", color: "#059669" },
-          Intervention: { label: "INTERVENTIONS", color: "#7c3aed" }
-        };
-        nodes.forEach(n => {
-          const k = headerMeta[n.label] ? n.label : "KPI";
-          if (!seen.has(k)) {
-            seen.add(k);
-            ctx.fillStyle = headerMeta[k].color;
-            ctx.font = "bold 11px sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText(headerMeta[k].label, W / 2, n.y - 20);
-          }
-        });
-        ctx.textAlign = "left";
       }
 
       const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
-      const connectedIds = new Set();
-      if (hovered) {
-        connectedIds.add(hovered.id);
-        edges.forEach(e => {
-          if (e.source === hovered.id) connectedIds.add(e.target);
-          if (e.target === hovered.id) connectedIds.add(e.source);
-        });
-      }
+      const allNodeMap = Object.fromEntries((_graphState.allNodes || nodes).map(n => [n.id, n]));
+      const adj = _getGraphAdjacency();
+      const focusNode = selected || hovered;
+      const connectedIds = focusNode ? _get3HopChain(focusNode.id) : new Set();
 
       edges.forEach(e => {
         const a = nodeMap[e.source], b = nodeMap[e.target];
         if (!a || !b) return;
-        const isHi = hovered && (e.source === hovered.id || e.target === hovered.id);
-        ctx.strokeStyle = hovered
-          ? (isHi ? "rgba(2, 132, 199, 0.85)" : "rgba(100, 116, 139, 0.10)")
-          : "rgba(100, 116, 139, 0.28)";
-        ctx.lineWidth = isHi ? 2.2 : 1.1;
+        const isHi = focusNode && connectedIds.has(e.source) && connectedIds.has(e.target);
+        ctx.strokeStyle = focusNode
+          ? (isHi ? "rgba(2, 132, 199, 0.85)" : "rgba(100, 116, 139, 0.07)")
+          : "rgba(100, 116, 139, 0.25)";
+        ctx.lineWidth = isHi ? 2.4 : 1.1;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         if (compact) {
@@ -1493,14 +1663,17 @@
       });
 
       const colors = { Dimension: "#0284c7", KPI: "#059669", Intervention: "#7c3aed" };
-      const maxChars = compact ? Math.max(18, Math.floor((W - 70) / 7)) : 28;
+      const maxChars = compact ? Math.max(16, Math.floor((W - 85) / 7)) : 24;
       nodes.forEach(n => {
-        const dimmed = hovered && !connectedIds.has(n.id);
-        const isSelf = hovered && hovered.id === n.id;
+        const dimmed = focusNode && !connectedIds.has(n.id);
+        const isSelf = focusNode && focusNode.id === n.id;
+        const isGap = _isGapNode(n, adj, allNodeMap);
+        const degree = (adj[n.id] || new Set()).size;
         const col = colors[n.label] || "#64748b";
-        const labelText = n.name.length > maxChars ? n.name.slice(0, maxChars - 1) + "..." : n.name;
+        const baseName = n.name.length > maxChars ? n.name.slice(0, maxChars - 1) + "..." : n.name;
+        const labelText = `${baseName} · ${degree}`;
 
-        ctx.globalAlpha = dimmed ? 0.28 : 1.0;
+        ctx.globalAlpha = dimmed ? 0.22 : 1.0;
         ctx.font = isSelf ? "bold 12px sans-serif" : "11.5px sans-serif";
         const textW = ctx.measureText(labelText).width;
         const pillW = Math.min(W - 24, textW + 28);
@@ -1508,12 +1681,12 @@
         const px = n.x - pillW / 2;
         const py = n.y - pillH / 2;
 
-        ctx.shadowColor = "rgba(15, 23, 42, 0.07)";
-        ctx.shadowBlur = isSelf ? 10 : 4;
+        ctx.shadowColor = "rgba(15, 23, 42, 0.08)";
+        ctx.shadowBlur = isSelf ? 12 : 4;
         ctx.shadowOffsetY = 1;
-        ctx.fillStyle = isSelf ? "#f8fafc" : "#ffffff";
-        ctx.strokeStyle = isSelf ? col : "#d4d1c7";
-        ctx.lineWidth = isSelf ? 2 : 1;
+        ctx.fillStyle = isSelf ? "#f0f9ff" : (isGap ? "#fffbeb" : "#ffffff");
+        ctx.strokeStyle = isSelf ? col : (isGap ? "#f59e0b" : "#d4d1c7");
+        ctx.lineWidth = isSelf ? 2.2 : (isGap ? 1.5 : 1);
         ctx.beginPath();
         ctx.roundRect(px, py, pillW, pillH, 13);
         ctx.fill();
@@ -1523,7 +1696,7 @@
 
         ctx.beginPath();
         ctx.arc(px + 12, n.y, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = col;
+        ctx.fillStyle = isGap ? "#f59e0b" : col;
         ctx.fill();
 
         ctx.fillStyle = "#0f172a";
@@ -1534,9 +1707,17 @@
 
     function resizeAndRenderGraph() {
       const canvas = document.getElementById("graphCanvas");
-      if (!canvas || !_graphState.rawNodes.length) return;
+      if (!canvas) return;
       const parentW = canvas.parentElement.clientWidth || 320;
       const W = Math.max(260, Math.floor(parentW));
+      if (!_graphState.rawNodes.length) {
+        _graphState.nodes = [];
+        canvas.width = W;
+        canvas.height = 120;
+        canvas.style.height = "120px";
+        renderGraphCanvas();
+        return;
+      }
       const H = layoutGraphNodes(W);
       canvas.width = W;
       canvas.height = H;
@@ -1550,6 +1731,7 @@
 
       if (!_graphState.bound) {
         _graphState.bound = true;
+        let dragMoved = false;
         const hitTest = (mx, my) => _graphState.nodes.find(n => Math.abs(mx - n.x) < 110 && Math.abs(my - n.y) < 15);
 
         canvas.addEventListener("mousemove", e => {
@@ -1557,6 +1739,7 @@
           const mx = (e.clientX - r.left) * (canvas.width / r.width);
           const my = (e.clientY - r.top) * (canvas.height / r.height);
           if (_graphState.dragging) {
+            dragMoved = true;
             _graphState.dragging.x = mx;
             _graphState.dragging.y = my;
             renderGraphCanvas();
@@ -1565,9 +1748,7 @@
           const hit = hitTest(mx, my) || null;
           if (hit !== _graphState.hovered) {
             _graphState.hovered = hit;
-            canvas.style.cursor = hit ? "grab" : "default";
-            const info = document.getElementById("graph-hover-info");
-            if (info) info.textContent = hit ? `${hit.label}: ${hit.name}` : "Hover a node to highlight edges · Drag to reposition";
+            canvas.style.cursor = hit ? "pointer" : "default";
             renderGraphCanvas();
           }
         });
@@ -1576,17 +1757,22 @@
           const r = canvas.getBoundingClientRect();
           const mx = (e.clientX - r.left) * (canvas.width / r.width);
           const my = (e.clientY - r.top) * (canvas.height / r.height);
+          dragMoved = false;
           const hit = hitTest(mx, my);
           if (hit) {
             _graphState.dragging = hit;
             canvas.style.cursor = "grabbing";
+          } else {
+            clearGraphSelection();
           }
         });
 
         window.addEventListener("mouseup", () => {
           if (_graphState.dragging) {
+            const clicked = _graphState.dragging;
             _graphState.dragging = null;
-            canvas.style.cursor = "grab";
+            canvas.style.cursor = "pointer";
+            if (!dragMoved) inspectGraphNode(clicked);
           }
         });
 
@@ -1604,9 +1790,18 @@
       try {
         const res = await fetch("/api/graph");
         const g = await res.json();
+        _graphState.allNodes = g.nodes || [];
         _graphState.rawNodes = g.nodes || [];
         _graphState.edges = g.edges || [];
         _graphState.hovered = null;
+        _graphState.selected = null;
+        const panel = document.getElementById("graph-inspector");
+        if (panel) panel.style.display = "none";
+        if (reset) {
+          _graphState.filter = "all";
+          const s = document.getElementById("graph-search");
+          if (s) s.value = "";
+        }
         if (!_graphState.rawNodes.length) {
           const W = Math.max(260, Math.floor(canvas.parentElement.clientWidth || 320));
           canvas.width = W;
@@ -1616,7 +1811,7 @@
           renderGraphCanvas();
           return;
         }
-        resizeAndRenderGraph();
+        applyGraphFilters();
       } catch (e) {
         const ctx = canvas.getContext("2d");
         ctx.fillStyle = "#dc2626";

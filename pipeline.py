@@ -165,7 +165,28 @@ def parse_extraction(content: str) -> ExtractionResult:
     try:
         return ExtractionResult.model_validate_json(text)
     except ValidationError:
-        return ExtractionResult.model_validate(json.loads(text))
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError:
+            return ExtractionResult()
+        if not isinstance(raw, dict):
+            return ExtractionResult()
+
+        def _clean(items, model):
+            valid = []
+            for item in items if isinstance(items, list) else []:
+                if isinstance(item, dict):
+                    try:
+                        valid.append(model.model_validate(item))
+                    except ValidationError:
+                        continue
+            return valid
+
+        return ExtractionResult(
+            dimensions=_clean(raw.get("dimensions"), Dimension),
+            kpis=_clean(raw.get("kpis"), KPI),
+            interventions=_clean(raw.get("interventions"), Intervention),
+        )
 
 
 def extract_chunk(client: httpx.Client, chunk: str, index: int, total: int) -> ExtractionResult:
