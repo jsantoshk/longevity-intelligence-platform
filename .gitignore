@@ -8,4 +8,4 @@ docs/*
 !docs/uploads/.gitkeep
 *.jsonl
 *.pdf
-*.docx
+*.docxngrok

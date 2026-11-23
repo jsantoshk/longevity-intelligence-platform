@@ -532,8 +532,9 @@ def manifest():
     return FileResponse(ROOT / "manifest.json", media_type="application/manifest+json")
 
 @app.get("/")
-def dashboard():
-    return FileResponse(DASHBOARD)
+def serve_root_v2():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(Path("longevity_intelligence_v2.html").read_text())
 
 
 @app.get("/api/health")
@@ -1378,3 +1379,68 @@ def serve_logo_png():
     if not p.exists():
         return Response(status_code=404)
     return Response(content=p.read_bytes(), media_type="image/png")
+
+
+# === LIP_API_KEY_AUTH ===
+import os as _lip_os
+import hmac as _lip_hmac
+import secrets as _lip_secrets
+from fastapi import Request as _LipRequest
+from fastapi.responses import JSONResponse as _LipJSONResponse, HTMLResponse as _LipHTMLResponse
+
+def _load_lip_api_key() -> str:
+    k = _lip_os.environ.get("LIP_API_KEY")
+    if k:
+        return k.strip()
+    env_p = Path(".env")
+    if env_p.exists():
+        for line in env_p.read_text().splitlines():
+            if line.startswith("LIP_API_KEY="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
+_LIP_API_KEY = _load_lip_api_key()
+_LIP_SESSIONS: set[str] = set()
+
+@app.get("/v1")
+def serve_v1_classic_ui():
+    return _LipHTMLResponse(Path("longevity_intelligence_platform.html").read_text())
+
+@app.post("/api/auth/login")
+async def lip_demo_login(request: _LipRequest):
+    body = await request.json()
+    u = str(body.get("username", "")).strip()
+    p = str(body.get("password", ""))
+    if u == "admin" and p == "longevity2026":
+        token = _lip_secrets.token_urlsafe(32)
+        _LIP_SESSIONS.add(token)
+        resp = _LipJSONResponse({"ok": True, "user": u})
+        resp.set_cookie("lip_session", token, httponly=True, samesite="lax", max_age=86400)
+        return resp
+    return _LipJSONResponse({"ok": False, "detail": "Invalid credentials"}, status_code=401)
+
+@app.post("/api/auth/logout")
+async def lip_demo_logout(request: _LipRequest):
+    tok = request.cookies.get("lip_session")
+    if tok:
+        _LIP_SESSIONS.discard(tok)
+    resp = _LipJSONResponse({"ok": True})
+    resp.delete_cookie("lip_session")
+    return resp
+
+@app.middleware("http")
+async def lip_api_key_guard(request: _LipRequest, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and path not in ("/api/health", "/api/auth/login", "/api/auth/logout"):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        req_key = request.headers.get("X-API-Key", "")
+        sess = request.cookies.get("lip_session", "")
+        key_ok = bool(_LIP_API_KEY and req_key and _lip_hmac.compare_digest(req_key, _LIP_API_KEY))
+        sess_ok = bool(sess and sess in _LIP_SESSIONS)
+        if not (key_ok or sess_ok):
+            return _LipJSONResponse(
+                {"detail": "Unauthorized. Provide a valid X-API-Key header or sign in."},
+                status_code=401,
+            )
+    return await call_next(request)

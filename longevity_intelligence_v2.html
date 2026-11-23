@@ -604,7 +604,7 @@
         </div>
 
         <div class="sidebar-footer">
-          <a href="/" class="btn btn-ghost btn-sm" style="justify-content:flex-start;">Classic UI (v1)</a>
+          <a href="/v1" class="btn btn-ghost btn-sm" style="justify-content:flex-start;">Classic UI (v1)</a>
           <div class="user-chip">
             <span id="signed-in-user">admin</span>
             <button class="btn btn-ghost btn-sm" style="padding:4px 8px;" onclick="handleLogout()">Sign Out</button>
@@ -865,21 +865,31 @@
       btn.textContent = inp.type === "password" ? "Show" : "Hide";
     }
 
-    function handleLogin(e) {
+    async function handleLogin(e) {
       e.preventDefault();
       const u = document.getElementById("login-user").value.trim();
       const p = document.getElementById("login-pass").value;
       const err = document.getElementById("login-error");
-      if (u === DEMO_USER && p === DEMO_PASS) {
-        err.style.display = "none";
-        sessionStorage.setItem(AUTH_KEY, u);
-        goScreen("app");
-      } else {
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        if (res.ok) {
+          err.style.display = "none";
+          sessionStorage.setItem(AUTH_KEY, u);
+          goScreen("app");
+        } else {
+          err.style.display = "block";
+        }
+      } catch {
         err.style.display = "block";
       }
     }
 
-    function handleLogout() {
+    async function handleLogout() {
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
       sessionStorage.removeItem(AUTH_KEY);
       goScreen("landing");
     }
