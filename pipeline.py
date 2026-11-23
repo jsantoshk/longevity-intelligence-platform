@@ -13,7 +13,7 @@ from pypdf import PdfReader
 
 from schemas import Dimension, ExtractionResult, Intervention, KPI, MergedExtraction
 
-OLLAMA_MODEL = "qwen3:8b"
+OLLAMA_MODEL = "gemma4:12b"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 DATABASE_URL = "postgresql://lip_admin:lip_password@localhost:5432/longevity_db"
 FALKORDB_HOST = "localhost"
@@ -84,7 +84,99 @@ def log(message: str) -> None:
     print(f"[pipeline] {message}", flush=True)
 
 
+def read_excel(path: Path) -> tuple[int, str]:
+    import openpyxl
+
+    log(f"Reading Excel with openpyxl: {path}")
+    wb = openpyxl.load_workbook(str(path), data_only=True)
+    sections: list[str] = []
+
+    ffill_keys = {"dimensions", "dimension", "kpi themes", "kpi theme", "theme", "pillar", "category"}
+    typo_fixes = {
+        "Smart Moblity for All": "Smart Mobility for All",
+        "Liesure & Social Participation": "Leisure & Social Participation",
+    }
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        raw_rows = [
+            [("" if cell is None else str(cell).strip()) for cell in row]
+            for row in ws.iter_rows(values_only=True)
+        ]
+        rows = [r for r in raw_rows if any(r)]
+        if not rows:
+            continue
+
+        # Detect header row (handles metadata/norm rows above the actual table)
+        header_idx = 0
+        for idx, r in enumerate(rows[:10]):
+            lower_cells = {c.lower() for c in r if c}
+            if lower_cells & {"dimensions", "metrics", "standard id", "reference standard"}:
+                header_idx = idx
+                break
+
+        headers = rows[header_idx]
+        data_rows = rows[header_idx + 1 :]
+        lines = [f"--- SHEET: {sheet_name} ---"]
+
+        # Include any top metadata/norm rows (e.g. Band 1-5 rating scale)
+        for meta in rows[:header_idx]:
+            meta_txt = " | ".join(c for c in meta if c)
+            if meta_txt:
+                lines.append(f"Metadata: {meta_txt}")
+
+        last_vals: dict[int, str] = {}
+        row_count = 0
+        for row in data_rows:
+            pairs: list[str] = []
+            for i, val in enumerate(row):
+                h = headers[i].strip() if i < len(headers) and headers[i] else ""
+                val = typo_fixes.get(val, val)
+                if h.lower() in ffill_keys:
+                    if val:
+                        last_vals[i] = val
+                    elif i in last_vals:
+                        val = last_vals[i]
+                if val:
+                    pairs.append(f"{h}: {val}" if h else val)
+            if pairs:
+                lines.append(" | ".join(pairs))
+                row_count += 1
+
+        sections.append("\n".join(lines))
+        log(f"  sheet '{sheet_name}': {row_count} data rows (header row {header_idx + 1})")
+
+    return len(wb.sheetnames), "\n\n".join(sections)
+
+
+def read_csv(path: Path) -> tuple[int, str]:
+    import csv
+
+    log(f"Reading CSV: {path}")
+    with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as f:
+        rows = [[c.strip() for c in r] for r in csv.reader(f) if any(c.strip() for c in r)]
+    if not rows:
+        return 1, ""
+    headers = rows[0]
+    lines = [f"--- CSV: {path.name} ---"]
+    for row in rows[1:]:
+        pairs = [
+            f"{headers[i]}: {val}" if i < len(headers) and headers[i] else val
+            for i, val in enumerate(row)
+            if val
+        ]
+        if pairs:
+            lines.append(" | ".join(pairs))
+    log(f"  csv: {len(rows) - 1} data rows")
+    return 1, "\n".join(lines)
+
+
 def read_pdf(path: Path) -> tuple[int, str]:
+    suffix = path.suffix.lower()
+    if suffix in {".xlsx", ".xlsm"}:
+        return read_excel(path)
+    if suffix == ".csv":
+        return read_csv(path)
     log(f"Reading PDF with pypdf: {path}")
     reader = PdfReader(str(path))
     pages: list[str] = []
@@ -196,13 +288,14 @@ def extract_chunk(client: httpx.Client, chunk: str, index: int, total: int) -> E
         json={
             "model": OLLAMA_MODEL,
             "stream": False,
+            "think": False,
             "format": "json",
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": chunk},
             ],
         },
-        timeout=180,
+        timeout=300,
     )
     response.raise_for_status()
     content = response.json()["message"]["content"]

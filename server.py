@@ -277,10 +277,22 @@ def process_pdf(
     try:
         _mark(job_id, 0, "done", _clean_doc_name(str(path)))
         data = path.read_bytes()
-        _mark(job_id, 1, "active", "Checking PDF header")
-        if not data.startswith(b"%PDF"):
-            raise ValueError("File is not a PDF")
-        _mark(job_id, 1, "done", "PDF header confirmed")
+        ext = path.suffix.lower()
+        _mark(job_id, 1, "active", f"Validating {ext or 'file'} format")
+        if ext == ".pdf":
+            if not data.startswith(b"%PDF"):
+                raise ValueError("File is not a valid PDF")
+            _mark(job_id, 1, "done", "PDF header confirmed")
+        elif ext in (".xlsx", ".xlsm"):
+            if not data.startswith(b"PK\x03\x04"):
+                raise ValueError("File is not a valid Excel workbook")
+            _mark(job_id, 1, "done", "Excel workbook confirmed")
+        elif ext == ".csv":
+            if not data.strip():
+                raise ValueError("CSV file is empty")
+            _mark(job_id, 1, "done", "CSV file confirmed")
+        else:
+            raise ValueError(f"Unsupported file type: {ext}")
 
         _mark(job_id, 2, "active", "Hashing file")
         digest = sha256_file(path)
@@ -1100,8 +1112,8 @@ async def upload(
     sector: str = Form(default="General"),
 ):
     name = Path(file.filename or "report.pdf").name
-    if not name.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Upload a PDF file")
+    if not name.lower().endswith((".pdf", ".xlsx", ".xlsm", ".csv")):
+        raise HTTPException(status_code=400, detail="Upload a PDF, Excel (.xlsx), or CSV file")
     job_id = uuid.uuid4().hex
     path = UPLOADS / f"{job_id}_{name}"
     path.write_bytes(await file.read())
@@ -1352,3 +1364,17 @@ def v1_export_jsonl(request: Request, client: dict = Depends(require_api_key)):
         media_type="application/x-ndjson",
         headers={"Content-Disposition": 'attachment; filename="lip_slm_training_data.jsonl"'},
     )
+
+@app.get("/v2")
+def serve_v2_ui():
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(Path("longevity_intelligence_v2.html").read_text())
+
+
+@app.get("/logo.png")
+def serve_logo_png():
+    from fastapi.responses import Response
+    p = Path("LIP_logo.png") if Path("LIP_logo.png").exists() else Path("logo.png")
+    if not p.exists():
+        return Response(status_code=404)
+    return Response(content=p.read_bytes(), media_type="image/png")

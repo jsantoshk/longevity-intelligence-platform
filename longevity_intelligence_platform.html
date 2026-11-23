@@ -683,8 +683,116 @@
       .action-btns { justify-content: flex-start; margin-top: 6px; }
     }
   </style>
+
+<!-- W3C COGA Accessibility Styles -->
+<style id="coga-styles">
+  #coga-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 9999;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #f8fafc;
+    border-bottom: 2px solid #cbd5e1;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: #0f172a;
+  }
+  #coga-toolbar .coga-label {
+    font-weight: 700;
+    margin-right: 4px;
+  }
+  #coga-toolbar button {
+    padding: 6px 12px;
+    border: 1.5px solid #475569;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  #coga-toolbar button:focus-visible {
+    outline: 3px solid #2563eb;
+    outline-offset: 2px;
+  }
+  #coga-toolbar button[aria-pressed="true"] {
+    background: #1d4ed8;
+    color: #ffffff;
+    border-color: #1e3a8a;
+  }
+  html.coga-text-lg { font-size: 118% !important; }
+  html.coga-text-xl { font-size: 135% !important; }
+
+  html.coga-spaced body,
+  html.coga-spaced p,
+  html.coga-spaced li,
+  html.coga-spaced td {
+    line-height: 1.85 !important;
+    letter-spacing: 0.03em !important;
+    word-spacing: 0.08em !important;
+  }
+  html.coga-spaced *,
+  html.coga-spaced *::before,
+  html.coga-spaced *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  html.coga-contrast,
+  html.coga-contrast body {
+    background: #000000 !important;
+    color: #ffffff !important;
+  }
+  html.coga-contrast #coga-toolbar {
+    background: #111111 !important;
+    color: #ffffff !important;
+    border-bottom: 2px solid #facc15 !important;
+  }
+  html.coga-contrast #coga-toolbar button {
+    background: #000000 !important;
+    color: #facc15 !important;
+    border: 2px solid #facc15 !important;
+  }
+  html.coga-contrast #coga-toolbar button[aria-pressed="true"] {
+    background: #facc15 !important;
+    color: #000000 !important;
+  }
+  html.coga-contrast a,
+  html.coga-contrast button,
+  html.coga-contrast input,
+  html.coga-contrast select,
+  html.coga-contrast textarea {
+    outline-color: #facc15 !important;
+  }
+  html.coga-contrast .card,
+  html.coga-contrast section,
+  html.coga-contrast nav,
+  html.coga-contrast header,
+  html.coga-contrast aside {
+    background: #111111 !important;
+    color: #ffffff !important;
+    border-color: #facc15 !important;
+  }
+</style>
+
 </head>
 <body>
+
+<div id="coga-toolbar" role="region" aria-label="Accessibility Controls">
+  <span class="coga-label">Accessibility (W3C COGA):</span>
+  <button type="button" id="coga-size-btn" aria-pressed="false" title="Cycle text size">Text: Normal</button>
+  <button type="button" id="coga-contrast-btn" aria-pressed="false">High Contrast</button>
+  <button type="button" id="coga-spaced-btn" aria-pressed="false">Calm &amp; Spaced</button>
+  <button type="button" id="coga-plain-btn" aria-pressed="false">Plain Language AI</button>
+  <button type="button" id="coga-read-btn" aria-pressed="false">Read Aloud</button>
+  <button type="button" id="coga-reset-btn" style="margin-left:auto;">Reset</button>
+</div>
+
   <header>
     <div class="brand">
       <div class="logo">LIP</div>
@@ -797,7 +905,7 @@
           <div class="sub">Tag documents by city, country, and sector for multi-tenant filtering.</div>
           <div style="margin-bottom:10px;">
             <label>PDF File</label>
-            <input id="up-file" type="file" accept=".pdf" />
+            <input id="up-file" type="file" accept=".pdf,.xlsx,.xlsm,.csv" />
           </div>
           <div class="row" style="margin-bottom:12px;">
             <div>
@@ -875,6 +983,13 @@
         </h2>
         <div class="sub" style="margin-bottom:10px;">Structured ontology flow: Dimensions (blue) &rarr; KPIs (emerald) &rarr; Interventions (purple). Click any node to trace its full causal chain.</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;">
+          <div id="graph-view-toggle" style="display:flex;gap:4px;background:#e2e8f0;padding:3px;border-radius:8px;">
+            <button id="gv-table" class="btn btn-primary" style="padding:5px 10px;font-size:12px;" onclick="setGraphViewMode('table')">Table View</button>
+            <button id="gv-canvas" class="btn btn-secondary" style="padding:5px 10px;font-size:12px;" onclick="setGraphViewMode('graph')">Graph View</button>
+          </div>
+          <select id="graph-dim-select" onchange="onGraphDimChange()" style="padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff;max-width:260px;">
+            <option value="__all__">All Dimensions</option>
+          </select>
           <input id="graph-search" type="text" placeholder="Search dimensions, KPIs, interventions..." oninput="applyGraphFilters()" style="flex:1;min-width:220px;padding:7px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;" />
           <div style="display:flex;gap:6px;">
             <button id="gf-all" class="btn btn-primary" style="padding:6px 12px;font-size:12px;" onclick="setGraphFilter('all')">All</button>
@@ -884,6 +999,7 @@
         </div>
         <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
           <div style="flex:1;min-width:300px;position:relative;">
+            <div id="graph-table-wrap" style="max-height:560px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff;"></div>
             <canvas id="graphCanvas"></canvas>
           </div>
           <div id="graph-inspector" style="width:310px;max-width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;display:none;font-size:13px;">
@@ -2088,5 +2204,290 @@
     restoreActiveTab();
     refreshAll();
   </script>
+
+<script id="coga-script">
+(function () {
+  const KEY = "lip_coga_prefs_v1";
+  const defaults = { size: "normal", contrast: false, spaced: false, plainAI: false };
+  let prefs = { ...defaults };
+  try {
+    prefs = { ...defaults, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
+  } catch {}
+
+  const root = document.documentElement;
+  const sizeBtn = document.getElementById("coga-size-btn");
+  const contrastBtn = document.getElementById("coga-contrast-btn");
+  const spacedBtn = document.getElementById("coga-spaced-btn");
+  const plainBtn = document.getElementById("coga-plain-btn");
+  const readBtn = document.getElementById("coga-read-btn");
+  const resetBtn = document.getElementById("coga-reset-btn");
+
+  function apply() {
+    root.classList.remove("coga-text-lg", "coga-text-xl");
+    if (prefs.size === "lg") root.classList.add("coga-text-lg");
+    if (prefs.size === "xl") root.classList.add("coga-text-xl");
+
+    root.classList.toggle("coga-contrast", !!prefs.contrast);
+    root.classList.toggle("coga-spaced", !!prefs.spaced);
+
+    sizeBtn.textContent = prefs.size === "normal" ? "Text: Normal" : (prefs.size === "lg" ? "Text: Large (A+)" : "Text: Extra Large (A++)");
+    sizeBtn.setAttribute("aria-pressed", prefs.size !== "normal" ? "true" : "false");
+    contrastBtn.setAttribute("aria-pressed", prefs.contrast ? "true" : "false");
+    spacedBtn.setAttribute("aria-pressed", prefs.spaced ? "true" : "false");
+    plainBtn.setAttribute("aria-pressed", prefs.plainAI ? "true" : "false");
+    plainBtn.textContent = prefs.plainAI ? "Plain Language AI: ON" : "Plain Language AI";
+
+    window.__COGA_PLAIN_AI__ = !!prefs.plainAI;
+    try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch {}
+  }
+
+  sizeBtn.addEventListener("click", () => {
+    prefs.size = prefs.size === "normal" ? "lg" : (prefs.size === "lg" ? "xl" : "normal");
+    apply();
+  });
+  contrastBtn.addEventListener("click", () => { prefs.contrast = !prefs.contrast; apply(); });
+  spacedBtn.addEventListener("click", () => { prefs.spaced = !prefs.spaced; apply(); });
+  plainBtn.addEventListener("click", () => { prefs.plainAI = !prefs.plainAI; apply(); });
+
+  readBtn.addEventListener("click", () => {
+    if (!("speechSynthesis" in window)) return alert("Read Aloud is not supported in this browser.");
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      readBtn.setAttribute("aria-pressed", "false");
+      readBtn.textContent = "Read Aloud";
+      return;
+    }
+    const selected = window.getSelection().toString().trim();
+    const text = selected || document.body.innerText.replace(/Accessibility \(W3C COGA\):.*?Reset/s, "").trim().slice(0, 3000);
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.92;
+    utter.onend = () => {
+      readBtn.setAttribute("aria-pressed", "false");
+      readBtn.textContent = "Read Aloud";
+    };
+    readBtn.setAttribute("aria-pressed", "true");
+    readBtn.textContent = "Stop Reading";
+    window.speechSynthesis.speak(utter);
+  });
+
+  resetBtn.addEventListener("click", () => {
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    prefs = { ...defaults };
+    readBtn.setAttribute("aria-pressed", "false");
+    readBtn.textContent = "Read Aloud";
+    apply();
+  });
+
+  // Intercept AI Assistant fetch requests when Plain Language AI is ON
+  const origFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    try {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (window.__COGA_PLAIN_AI__ && init && typeof init.body === "string" && /\/(ask|chat|query|assistant)/i.test(url)) {
+        const bodyObj = JSON.parse(init.body);
+        const rule = " [Respond in W3C COGA Plain Language: use short sentences, everyday words, clear bullet points, and explain any numbers or scores simply.]";
+        for (const field of ["question", "query", "message", "prompt"]) {
+          if (typeof bodyObj[field] === "string" && !bodyObj[field].includes("W3C COGA Plain Language")) {
+            bodyObj[field] += rule;
+          }
+        }
+        init = { ...init, body: JSON.stringify(bodyObj) };
+      }
+    } catch {}
+    return origFetch(input, init);
+  };
+
+  apply();
+})();
+</script>
+
+
+<script id="graph-ux-upgrade">
+(function () {
+  window._graphViewMode = "table";
+  window._graphSelectedDim = "__all__";
+
+  const nodeName = (n) => (n && (n.name || (n.properties && n.properties.name) || n.id || "")) + "";
+  const nodeType = (n) => ((n && (n.label || n.type || n.group || n.kind || "")) + "").toLowerCase();
+  const edgeSrc = (e) => String(e.source ?? e.from ?? "");
+  const edgeTgt = (e) => String(e.target ?? e.to ?? "");
+
+  function populateDimDropdown() {
+    const sel = document.getElementById("graph-dim-select");
+    if (!sel || typeof _graphState === "undefined") return;
+    const all = _graphState.allNodes || [];
+    const edges = _graphState.edges || [];
+    const dims = all.filter(n => nodeType(n).includes("dim"));
+    const prev = String(window._graphSelectedDim);
+
+    sel.innerHTML = `<option value="__all__">All Dimensions (${dims.length})</option>` +
+      dims
+        .sort((a, b) => nodeName(a).localeCompare(nodeName(b)))
+        .map(d => {
+          const did = String(d.id);
+          const cnt = edges.filter(e => edgeSrc(e) === did || edgeTgt(e) === did).length;
+          return `<option value="${did}">${escapeHtml(nodeName(d))} (${cnt})</option>`;
+        })
+        .join("");
+
+    if (prev && [...sel.options].some(o => o.value === prev)) {
+      sel.value = prev;
+    } else {
+      window._graphSelectedDim = "__all__";
+      sel.value = "__all__";
+    }
+  }
+
+  function getScopedNodes() {
+    const all = _graphState.allNodes || [];
+    const edges = _graphState.edges || [];
+    const dimId = String(window._graphSelectedDim || "__all__");
+    if (!dimId || dimId === "__all__") return all;
+
+    const keep = new Set([dimId]);
+    const kpiIds = new Set();
+    edges.forEach(e => {
+      const s = edgeSrc(e), t = edgeTgt(e);
+      if (s === dimId) { keep.add(t); kpiIds.add(t); }
+      if (t === dimId) { keep.add(s); kpiIds.add(s); }
+    });
+    edges.forEach(e => {
+      const s = edgeSrc(e), t = edgeTgt(e);
+      if (kpiIds.has(s)) keep.add(t);
+      if (kpiIds.has(t)) keep.add(s);
+    });
+    return all.filter(n => keep.has(String(n.id)));
+  }
+
+  function renderGraphTable() {
+    const wrap = document.getElementById("graph-table-wrap");
+    if (!wrap || typeof _graphState === "undefined") return;
+
+    const nodes = getScopedNodes();
+    const byId = new Map((_graphState.allNodes || []).map(n => [String(n.id), n]));
+    const edges = _graphState.edges || [];
+    const q = (document.getElementById("graph-search")?.value || "").trim().toLowerCase();
+    const filter = _graphState.filter || "all";
+
+    const kpis = nodes.filter(n => nodeType(n).includes("kpi"));
+    const rows = kpis.map(kpi => {
+      const kid = String(kpi.id);
+      const linkedIds = new Set();
+      edges.forEach(e => {
+        if (edgeSrc(e) === kid) linkedIds.add(edgeTgt(e));
+        if (edgeTgt(e) === kid) linkedIds.add(edgeSrc(e));
+      });
+      const linkedNodes = [...linkedIds].map(id => byId.get(id)).filter(Boolean);
+      const dims = linkedNodes.filter(n => nodeType(n).includes("dim"));
+      const ints = linkedNodes.filter(n => nodeType(n).includes("int"));
+      const isGap = dims.length === 0 || ints.length === 0;
+      return { kpi, dims, ints, isGap };
+    }).filter(r => {
+      if (filter === "chains" && r.isGap) return false;
+      if (filter === "gaps" && !r.isGap) return false;
+      if (!q) return true;
+      const hay = [
+        nodeName(r.kpi),
+        ...r.dims.map(nodeName),
+        ...r.ints.map(nodeName),
+      ].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+
+    if (!rows.length) {
+      wrap.innerHTML = `<div style="padding:24px;text-align:center;color:#64748b;font-size:13px;">No matching KPIs found for this filter.</div>`;
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead style="position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:left;">
+          <tr>
+            <th style="padding:10px 12px;color:#1e40af;">Dimension</th>
+            <th style="padding:10px 12px;color:#065f46;">KPI / Metric (${rows.length})</th>
+            <th style="padding:10px 12px;color:#6b21a8;">Linked Interventions</th>
+            <th style="padding:10px 12px;width:95px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr onclick="inspectGraphNodeById('${String(r.kpi.id).replace(/'/g, "\\'")}')" style="border-bottom:1px solid #f1f5f9;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+              <td style="padding:9px 12px;color:#1e3a8a;font-weight:600;">${r.dims.length ? r.dims.map(d => escapeHtml(nodeName(d))).join(", ") : '<span style="color:#94a3b8;">Unlinked</span>'}</td>
+              <td style="padding:9px 12px;color:#0f172a;font-weight:500;">${escapeHtml(nodeName(r.kpi))}</td>
+              <td style="padding:9px 12px;color:#475569;">${r.ints.length ? r.ints.map(i => escapeHtml(nodeName(i))).join("; ") : '<span style="color:#94a3b8;">None yet</span>'}</td>
+              <td style="padding:9px 12px;">
+                ${r.isGap
+                  ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;">Gap</span>'
+                  : '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;">Complete</span>'}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  window.inspectGraphNodeById = function (id) {
+    if (typeof _graphState === "undefined") return;
+    const n = (_graphState.allNodes || []).find(x => String(x.id) === String(id));
+    if (n && typeof inspectGraphNode === "function") inspectGraphNode(n);
+  };
+
+  window.setGraphViewMode = function (mode) {
+    window._graphViewMode = mode;
+    const tBtn = document.getElementById("gv-table");
+    const gBtn = document.getElementById("gv-canvas");
+    const tWrap = document.getElementById("graph-table-wrap");
+    const canvas = document.getElementById("graphCanvas");
+
+    if (tBtn && gBtn) {
+      tBtn.className = mode === "table" ? "btn btn-primary" : "btn btn-secondary";
+      gBtn.className = mode === "graph" ? "btn btn-primary" : "btn btn-secondary";
+    }
+    if (tWrap) tWrap.style.display = mode === "table" ? "block" : "none";
+    if (canvas) canvas.style.display = mode === "graph" ? "block" : "none";
+
+    // Auto-focus first Dimension in Graph View to prevent spaghetti
+    if (mode === "graph" && typeof _graphState !== "undefined" && window._graphSelectedDim === "__all__" && (_graphState.allNodes || []).length > 30) {
+      const firstDim = (_graphState.allNodes || []).find(n => nodeType(n).includes("dim"));
+      if (firstDim) {
+        window._graphSelectedDim = String(firstDim.id);
+        const sel = document.getElementById("graph-dim-select");
+        if (sel) sel.value = String(firstDim.id);
+      }
+    }
+    if (typeof applyGraphFilters === "function") applyGraphFilters();
+  };
+
+  window.onGraphDimChange = function () {
+    const sel = document.getElementById("graph-dim-select");
+    window._graphSelectedDim = sel ? String(sel.value) : "__all__";
+    if (typeof applyGraphFilters === "function") applyGraphFilters();
+  };
+
+  if (typeof window.applyGraphFilters === "function") {
+    const origApply = window.applyGraphFilters;
+    window.applyGraphFilters = function () {
+      populateDimDropdown();
+      const tWrap = document.getElementById("graph-table-wrap");
+      const canvas = document.getElementById("graphCanvas");
+      if (tWrap) tWrap.style.display = window._graphViewMode === "table" ? "block" : "none";
+      if (canvas) canvas.style.display = window._graphViewMode === "graph" ? "block" : "none";
+
+      if (window._graphViewMode === "table") {
+        renderGraphTable();
+      } else {
+        const fullAll = _graphState.allNodes;
+        const scoped = getScopedNodes();
+        _graphState.allNodes = scoped;
+        _graphState.rawNodes = scoped;
+        origApply();
+        _graphState.allNodes = fullAll;
+      }
+    };
+  }
+})();
+</script>
+
 </body>
 </html>
