@@ -13,7 +13,7 @@ from pypdf import PdfReader
 
 from schemas import Dimension, ExtractionResult, Intervention, KPI, MergedExtraction
 
-OLLAMA_MODEL = "gemma4:12b"
+OLLAMA_MODEL = "gemma4:26b"
 OLLAMA_CHAT_URL = "http://localhost:11434/api/chat"
 DATABASE_URL = "postgresql://lip_admin:lip_password@localhost:5432/longevity_db"
 FALKORDB_HOST = "localhost"

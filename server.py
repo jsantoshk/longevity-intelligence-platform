@@ -1187,7 +1187,7 @@ def chat(body: ChatRequest):
     if not message:
         raise HTTPException(status_code=400, detail="Message is empty")
 
-    hits = _semantic_search(message, limit=4)
+    hits = _semantic_search(message, limit=6)
     passages = (
         "\n\n".join(
             f"[{h['document']} | chunk {h['chunk']} | match {h['score']}]\n{h['content']}"
@@ -1197,16 +1197,20 @@ def chat(body: ChatRequest):
         else "No vector passages indexed yet."
     )
     system_prompt = (
-        "You are the Longevity Intelligence Platform assistant. "
-        "Answer strictly using the approved stored extractions and semantic passages below. "
-        "Always cite the exact source document name in brackets—e.g. [report.pdf]—"
-        "next to every fact, KPI, or intervention you mention. "
-        "Never attribute facts from one document to a different document. "
-        "If the provided context does not contain the answer, say so clearly.\n\n"
-        f"Approved stored extractions:\n{_context()}\n\n"
-        f"Top semantic passages from PDFs:\n{passages}"
+        "You are the Longevity Intelligence Platform (LIP) advisor—warm, clear, practical, and easy to talk to.\n\n"
+        "How to respond:\n"
+        "1. Everyday & general questions: If the user asks a casual, general-knowledge, or non-longevity question, "
+        "answer naturally and helpfully in plain English. Do NOT force longevity facts or document citations where they don't belong.\n"
+        "2. Longevity, ageing, policy, housing, care, or community questions: Synthesize the reference material below "
+        "into a comprehensive, usable solution—not just a list of citations. Give concrete steps, practical recommendations, "
+        "and clear ways to measure success in plain, human language (avoid internal jargon like 'graph nodes', 'extractions', or 'chunks').\n"
+        "3. Grounding & citations: When you draw on a specific benchmark, metric, or intervention from the reference material, "
+        "include the exact document name in brackets (e.g., [report.pdf]) naturally as supporting proof. "
+        "Never invent a document name or attribute a fact to the wrong file. If the reference material doesn't cover part of a longevity question, "
+        "you may still give sound general guidance while clearly noting what comes from general best practice vs. the indexed reports.\n\n"
+        f"Reference knowledge base:\n{_context()}\n\n"
+        f"Relevant report passages:\n{passages}"
     )
-
     try:
         reply = _call_local_llm(system_prompt, message)
     except Exception as exc:
