@@ -532,7 +532,7 @@ def manifest():
     return FileResponse(ROOT / "manifest.json", media_type="application/manifest+json")
 
 @app.get("/")
-def serve_root_v2():
+def serve_root():
     from fastapi.responses import HTMLResponse
     return HTMLResponse(Path("longevity_intelligence_v2.html").read_text())
 
@@ -1370,10 +1370,6 @@ def v1_export_jsonl(request: Request, client: dict = Depends(require_api_key)):
         headers={"Content-Disposition": 'attachment; filename="lip_slm_training_data.jsonl"'},
     )
 
-@app.get("/v2")
-def serve_v2_ui():
-    from fastapi.responses import HTMLResponse
-    return HTMLResponse(Path("longevity_intelligence_v2.html").read_text())
 
 
 @app.get("/logo.png")
@@ -1406,9 +1402,6 @@ def _load_lip_api_key() -> str:
 _LIP_API_KEY = _load_lip_api_key()
 _LIP_SESSIONS: set[str] = set()
 
-@app.get("/v1")
-def serve_v1_classic_ui():
-    return _LipHTMLResponse(Path("longevity_intelligence_platform.html").read_text())
 
 @app.post("/api/auth/login")
 async def lip_demo_login(request: _LipRequest):
