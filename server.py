@@ -1448,3 +1448,38 @@ async def lip_api_key_guard(request: _LipRequest, call_next):
                 status_code=401,
             )
     return await call_next(request)
+
+class V2NlQaRequest(BaseModel):
+    question: str
+    context: str = ""
+
+
+@app.post("/api/v2/nl-qa")
+def v2_nl_qa(req: V2NlQaRequest):
+    import urllib.request, json as _json
+    prompt = (
+        "You are the Longevity Intelligence Platform (LIP) advisor. Speak in clear, natural, everyday language—avoid robotic or overly technical phrasing.\n"
+        "- If the question is general or conversational, answer it directly and helpfully.\n"
+        "- If the question relates to longevity, healthy ageing, services, policy, or community planning, use the context below to give a "
+        "practical, well-structured, usable solution (clear actions, why they work, and how to track progress) rather than just repeating labels.\n"
+        "- Ground specific recommendations in the provided context where relevant, and be transparent if you add general practical advice beyond the context.\n\n"
+        f"Context:\n{req.context}\n\nQuestion: {req.question}"
+    )
+    payload = _json.dumps({
+        "model": os.getenv("LIP_GEMMA_MODEL", "gemma4:26b"),
+        "prompt": prompt,
+        "stream": False,
+    }).encode("utf-8")
+    try:
+        req_obj = urllib.request.Request(
+            os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate"),
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_obj, timeout=120) as resp:
+            out = _json.loads(resp.read().decode("utf-8"))
+            return {"answer": out.get("response", "").strip()}
+    except Exception as exc:
+        return {"answer": f"Graph-grounded matches are highlighted above. (Local Gemma server not reachable: {exc})"}
+
