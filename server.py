@@ -502,6 +502,7 @@ async def track_api_telemetry(request: Request, call_next):
 
 class ChatRequest(BaseModel):
     message: str
+    channel: str = "web"
 
 
 class ApprovalRequest(BaseModel):
@@ -1181,11 +1182,230 @@ def _context() -> str:
     return "\n".join(lines)
 
 
+
+class GuardrailPayload(BaseModel):
+    name: str
+    rule_type: str = "policy"
+    rule_text: str
+    enabled: bool = True
+
+
+_CHANNEL_INSTRUCTIONS = {
+    "web": "",
+    "mobile": (
+        "Channel format (Mobile App): Keep paragraphs concise and scannable with short bullet points "
+        "and clear next steps suitable for a phone screen."
+    ),
+    "whatsapp": (
+        "Channel format (WhatsApp): Write in a warm, conversational messaging style. Use short paragraphs, "
+        "simple bullet points, and avoid wide Markdown tables."
+    ),
+    "email": (
+        "Channel format (Email): Format as a ready-to-send email starting with 'Subject: ...', "
+        "followed by a polite greeting, structured body, and a clear sign-off."
+    ),
+    "sms": (
+        "Channel format (SMS): Reply in plain text only (no Markdown, no asterisks, no bullet symbols). "
+        "Keep the entire reply concise—under 320 characters if possible."
+    ),
+}
+
+
+def _ensure_guardrails_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_guardrails (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            rule_type TEXT NOT NULL DEFAULT 'policy',
+            rule_text TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    count = conn.execute("SELECT COUNT(*) FROM lip_guardrails").fetchone()[0]
+    if count == 0:
+        conn.cursor().executemany(
+            "INSERT INTO lip_guardrails (name, rule_type, rule_text, enabled) VALUES (%s, %s, %s, %s)",
+            [
+                (
+                    "No Clinical Diagnosis",
+                    "safety",
+                    "Never diagnose medical conditions or prescribe medication; advise consulting a qualified clinician for personal medical decisions.",
+                    True,
+                ),
+                (
+                    "Plain-English Clarity",
+                    "tone",
+                    "Use clear, everyday language and avoid internal technical jargon like graph nodes, vectors, or chunks.",
+                    True,
+                ),
+                (
+                    "Transparent Sourcing",
+                    "grounding",
+                    "Never fabricate document names or statistics. Clearly distinguish indexed report evidence from general best practice.",
+                    True,
+                ),
+            ],
+        )
+    conn.commit()
+
+
+def _get_active_guardrails() -> list[dict]:
+    try:
+        with _connect() as conn:
+            _ensure_guardrails_schema(conn)
+            rows = conn.execute(
+                "SELECT id, name, rule_type, rule_text FROM lip_guardrails WHERE enabled = TRUE ORDER BY id ASC"
+            ).fetchall()
+            return [
+                {"id": r[0], "name": r[1], "rule_type": r[2], "rule_text": r[3]}
+                for r in rows
+            ]
+    except Exception:
+        return []
+
+
+@app.get("/static/lip_admin_omni.js")
+def serve_admin_omni_js():
+    js_path = ROOT / "static" / "lip_admin_omni.js"
+    if not js_path.exists():
+        raise HTTPException(status_code=404, detail="lip_admin_omni.js not found")
+    return FileResponse(js_path, media_type="application/javascript")
+
+
+@app.get("/api/admin/guardrails")
+def list_guardrails(page: int = 1, page_size: int = 10, q: str = ""):
+    page = max(1, page)
+    page_size = max(1, min(100, page_size))
+    offset = (page - 1) * page_size
+    search = f"%{q.strip()}%"
+    with _connect() as conn:
+        _ensure_guardrails_schema(conn)
+        if q.strip():
+            total = conn.execute(
+                "SELECT COUNT(*) FROM lip_guardrails WHERE name ILIKE %s OR rule_text ILIKE %s OR rule_type ILIKE %s",
+                (search, search, search),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT id, name, rule_type, rule_text, enabled, created_at
+                FROM lip_guardrails
+                WHERE name ILIKE %s OR rule_text ILIKE %s OR rule_type ILIKE %s
+                ORDER BY id DESC LIMIT %s OFFSET %s
+                """,
+                (search, search, search, page_size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM lip_guardrails").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT id, name, rule_type, rule_text, enabled, created_at
+                FROM lip_guardrails
+                ORDER BY id DESC LIMIT %s OFFSET %s
+                """,
+                (page_size, offset),
+            ).fetchall()
+    return {
+        "items": [
+            {
+                "id": r[0],
+                "name": r[1],
+                "rule_type": r[2],
+                "rule_text": r[3],
+                "enabled": r[4],
+                "created_at": r[5].isoformat() if r[5] else None,
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@app.post("/api/admin/guardrails")
+def create_guardrail(body: GuardrailPayload):
+    if not body.name.strip() or not body.rule_text.strip():
+        raise HTTPException(status_code=400, detail="Name and rule_text are required")
+    with _connect() as conn:
+        _ensure_guardrails_schema(conn)
+        row = conn.execute(
+            """
+            INSERT INTO lip_guardrails (name, rule_type, rule_text, enabled)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id, name, rule_type, rule_text, enabled, created_at
+            """,
+            (body.name.strip(), body.rule_type.strip() or "policy", body.rule_text.strip(), body.enabled),
+        ).fetchone()
+        conn.commit()
+    return {
+        "id": row[0],
+        "name": row[1],
+        "rule_type": row[2],
+        "rule_text": row[3],
+        "enabled": row[4],
+        "created_at": row[5].isoformat() if row[5] else None,
+    }
+
+
+@app.put("/api/admin/guardrails/{guardrail_id}")
+def update_guardrail(guardrail_id: int, body: GuardrailPayload):
+    with _connect() as conn:
+        _ensure_guardrails_schema(conn)
+        row = conn.execute(
+            """
+            UPDATE lip_guardrails
+            SET name = %s, rule_type = %s, rule_text = %s, enabled = %s
+            WHERE id = %s
+            RETURNING id, name, rule_type, rule_text, enabled, created_at
+            """,
+            (body.name.strip(), body.rule_type.strip() or "policy", body.rule_text.strip(), body.enabled, guardrail_id),
+        ).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Guardrail not found")
+    return {
+        "id": row[0],
+        "name": row[1],
+        "rule_type": row[2],
+        "rule_text": row[3],
+        "enabled": row[4],
+        "created_at": row[5].isoformat() if row[5] else None,
+    }
+
+
+@app.delete("/api/admin/guardrails/{guardrail_id}")
+def delete_guardrail(guardrail_id: int):
+    with _connect() as conn:
+        _ensure_guardrails_schema(conn)
+        deleted = conn.execute(
+            "DELETE FROM lip_guardrails WHERE id = %s RETURNING id", (guardrail_id,)
+        ).fetchone()
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Guardrail not found")
+    return {"deleted": True, "id": guardrail_id}
+
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     message = body.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message is empty")
+
+    channel = (body.channel or "web").strip().lower()
+    if channel not in _CHANNEL_INSTRUCTIONS:
+        channel = "web"
+
+    active_guardrails = _get_active_guardrails()
+    guardrail_txt = ""
+    if active_guardrails:
+        rules = "\n".join(f"- [{g['rule_type'].upper()}] {g['name']}: {g['rule_text']}" for g in active_guardrails)
+        guardrail_txt = f"\n\nActive Guardrails (MUST FOLLOW):\n{rules}"
+
+    channel_txt = f"\n\n{_CHANNEL_INSTRUCTIONS[channel]}" if _CHANNEL_INSTRUCTIONS[channel] else ""
 
     hits = _semantic_search(message, limit=6)
     passages = (
@@ -1207,7 +1427,8 @@ def chat(body: ChatRequest):
         "3. Grounding & citations: When you draw on a specific benchmark, metric, or intervention from the reference material, "
         "include the exact document name in brackets (e.g., [report.pdf]) naturally as supporting proof. "
         "Never invent a document name or attribute a fact to the wrong file. If the reference material doesn't cover part of a longevity question, "
-        "you may still give sound general guidance while clearly noting what comes from general best practice vs. the indexed reports.\n\n"
+        "you may still give sound general guidance while clearly noting what comes from general best practice vs. the indexed reports."
+        f"{guardrail_txt}{channel_txt}\n\n"
         f"Reference knowledge base:\n{_context()}\n\n"
         f"Relevant report passages:\n{passages}"
     )
@@ -1215,7 +1436,13 @@ def chat(body: ChatRequest):
         reply = _call_local_llm(system_prompt, message)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"reply": reply, "model": LLM_MODEL, "semantic_hits": len(hits)}
+    return {
+        "reply": reply,
+        "model": LLM_MODEL,
+        "semantic_hits": len(hits),
+        "channel": channel,
+        "applied_guardrails": [g["name"] for g in active_guardrails],
+    }
 
     # --- SPRINT 3: GAP & POLICY INTELLIGENCE + SLM TRAINING EXPORT ---
 

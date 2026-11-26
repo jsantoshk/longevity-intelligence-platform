@@ -718,6 +718,18 @@
               </div>
             </div>
 
+            <div id="v2-nl-qa-bar" style="margin:12px 0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:#faf9fd;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <input id="v2-nl-query" class="input" style="flex:1;min-width:240px;padding:8px 12px;font-size:13px;"
+                       placeholder="Ask a graph question, e.g. 'Which interventions improve Digital Inclusion?' or 'Which KPIs are gaps?'"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();runV2NlSearch(false);}" />
+                <button id="v2-btn-ask-graph" class="btn btn-primary btn-sm" onclick="runV2NlSearch(false)">Ask Graph</button>
+                <button id="v2-btn-ask-gemma" class="btn btn-secondary btn-sm" onclick="runV2NlSearch(true)">Ask Gemma</button>
+                <button id="v2-nl-clear" class="btn btn-secondary btn-sm" style="display:none;" onclick="clearV2NlHighlight()">Clear Highlight</button>
+              </div>
+              <div id="v2-nl-result" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #ece8f5;font-size:13px;line-height:1.5;"></div>
+            </div>
+
             <div id="v2-table-wrap" class="table-scroll"></div>
             <canvas id="v2GraphCanvas" height="520"></canvas>
           </div>
@@ -1247,7 +1259,7 @@
         tWrap.innerHTML = `<table class="data-table">
           <thead><tr><th>Dimension</th><th>KPI / Metric (${rows.length})</th><th>Interventions</th><th style="width:100px;">Status</th></tr></thead>
           <tbody>
-            ${rows.map(r => `<tr>
+            ${rows.map(r => `<tr style="${v2RowStyle(r)}">
               <td style="font-weight:700;color:#3730a3;">${r.dims.length ? r.dims.map(d => esc(nName(d))).join(", ") : '<span style="color:#94a3b8;">Unlinked</span>'}</td>
               <td style="font-weight:600;">${esc(nName(r.kpi))}</td>
               <td style="color:var(--ink-muted);">${r.ints.length ? r.ints.map(i => esc(nName(i))).join("; ") : '<span style="color:#94a3b8;">None yet</span>'}</td>
@@ -1259,6 +1271,140 @@
         tWrap.style.display = "none";
         canvas.style.display = "block";
         drawCleanCanvas(canvas, scoped, q);
+      }
+    }
+
+    let v2NlHighlightIds = null;
+
+    function v2RowStyle(r) {
+      if (!v2NlHighlightIds) return "";
+      const ids = [String(r.kpi.id), ...r.dims.map(d => String(d.id)), ...r.ints.map(i => String(i.id))];
+      return ids.some(id => v2NlHighlightIds.has(id)) ? "background:#f5f3ff;box-shadow:inset 3px 0 0 #7c3aed;" : "";
+    }
+
+    function clearV2NlHighlight() {
+      v2NlHighlightIds = null;
+      const qInput = document.getElementById("v2-nl-query");
+      const resBox = document.getElementById("v2-nl-result");
+      const clrBtn = document.getElementById("v2-nl-clear");
+      if (qInput) qInput.value = "";
+      if (resBox) { resBox.style.display = "none"; resBox.innerHTML = ""; }
+      if (clrBtn) clrBtn.style.display = "none";
+      renderV2Graph();
+    }
+
+    function focusV2Node(nodeId) {
+      const target = String(nodeId);
+      const chain = new Set([target]);
+      v2Graph.edges.forEach(e => {
+        const s = eSrc(e), t = eTgt(e);
+        if (s === target) chain.add(t);
+        if (t === target) chain.add(s);
+      });
+      const hop2 = new Set(chain);
+      v2Graph.edges.forEach(e => {
+        const s = eSrc(e), t = eTgt(e);
+        if (chain.has(s)) hop2.add(t);
+        if (chain.has(t)) hop2.add(s);
+      });
+      v2NlHighlightIds = hop2;
+      const clrBtn = document.getElementById("v2-nl-clear");
+      if (clrBtn) clrBtn.style.display = "inline-flex";
+      renderV2Graph();
+    }
+
+    async function runV2NlSearch(useGemma) {
+      const gBtn = document.getElementById("v2-btn-ask-graph");
+      const mBtn = document.getElementById("v2-btn-ask-gemma");
+      if (gBtn && mBtn) {
+        gBtn.className = useGemma ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm";
+        mBtn.className = useGemma ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm";
+      }
+      const rawQ = (document.getElementById("v2-nl-query")?.value || "").trim();
+      const resBox = document.getElementById("v2-nl-result");
+      const clrBtn = document.getElementById("v2-nl-clear");
+      if (!rawQ) return;
+
+      const stop = new Set(["the","and","for","with","from","what","which","who","how","are","is","in","of","to","on","do","does","improve","help","support"]);
+      const terms = rawQ.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter(w => w.length > 2 && !stop.has(w));
+      const wantsGaps = /\b(gap|gaps|missing|unlinked|lack|no intervention)\b/i.test(rawQ);
+
+      const adj = new Map();
+      v2Graph.nodes.forEach(n => adj.set(String(n.id), new Set()));
+      v2Graph.edges.forEach(e => {
+        const s = eSrc(e), t = eTgt(e);
+        if (adj.has(s)) adj.get(s).add(t);
+        if (adj.has(t)) adj.get(t).add(s);
+      });
+      const byId = new Map(v2Graph.nodes.map(n => [String(n.id), n]));
+
+      const scored = v2Graph.nodes.map(n => {
+        const name = nName(n).toLowerCase();
+        const type = nType(n);
+        let score = 0;
+        terms.forEach(t => {
+          if (name.includes(t)) score += 3;
+          if (type.includes(t)) score += 1;
+        });
+        if (wantsGaps && type.includes("kpi")) {
+          const linked = [...(adj.get(String(n.id)) || [])].map(id => byId.get(id)).filter(Boolean);
+          const hasInt = linked.some(x => nType(x).includes("int"));
+          if (!hasInt) score += 4;
+        }
+        return { node: n, score };
+      }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+
+      const seedIds = scored.slice(0, 8).map(x => String(x.node.id));
+      const expanded = new Set(seedIds);
+      seedIds.forEach(id => (adj.get(id) || []).forEach(nb => expanded.add(nb)));
+      const hop2 = new Set(expanded);
+      expanded.forEach(id => (adj.get(id) || []).forEach(nb => hop2.add(nb)));
+
+      v2NlHighlightIds = hop2.size ? hop2 : null;
+      if (clrBtn) clrBtn.style.display = v2NlHighlightIds ? "inline-flex" : "none";
+
+      const matchedDims = [...hop2].map(id => byId.get(id)).filter(n => n && nType(n).includes("dim"));
+      const matchedKpis = [...hop2].map(id => byId.get(id)).filter(n => n && nType(n).includes("kpi"));
+      const matchedInts = [...hop2].map(id => byId.get(id)).filter(n => n && nType(n).includes("int"));
+
+      const summary = matchedKpis.length || matchedDims.length || matchedInts.length
+        ? `Matched <strong>${matchedDims.length}</strong> dimensions, <strong>${matchedKpis.length}</strong> KPIs, and <strong>${matchedInts.length}</strong> interventions across connected graph paths.`
+        : `No direct node match for "<strong>${esc(rawQ)}</strong>" — try terms like <em>Digital</em>, <em>Mobility</em>, <em>Care</em>, or <em>gaps</em>.`;
+
+      if (resBox) {
+        resBox.style.display = "block";
+        const boxStyle = "margin-top:8px;padding:12px 14px;background:#ffffff;border:1px solid #ddd6fe;border-left:4px solid #7c3aed;border-radius:10px;box-shadow:0 2px 6px rgba(124,58,237,0.07);color:#160f30;font-size:13.5px;line-height:1.55;";
+        resBox.innerHTML = `
+          <div style="font-size:12.5px;color:#4b5563;">${summary}</div>
+          <div id="v2-nl-gemma-ans" style="${useGemma ? boxStyle : 'display:none;'}"></div>
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+            ${[...matchedDims.slice(0, 3), ...matchedKpis.slice(0, 4), ...matchedInts.slice(0, 4)].map(n =>
+              `<button class="btn btn-secondary btn-sm" style="padding:3px 9px;font-size:11.5px;" onclick="focusV2Node('${esc(String(n.id))}')">${esc(nName(n))}</button>`
+            ).join("")}
+          </div>`;
+      }
+
+      renderV2Graph();
+
+      if (useGemma) {
+        const gEl = document.getElementById("v2-nl-gemma-ans");
+        if (gEl) gEl.textContent = "Querying local Gemma endpoint...";
+        const contextLines = [
+          ...matchedDims.slice(0, 5).map(n => "Dimension: " + nName(n)),
+          ...matchedKpis.slice(0, 8).map(n => "KPI: " + nName(n)),
+          ...matchedInts.slice(0, 8).map(n => "Intervention: " + nName(n)),
+        ].join("\n");
+        try {
+          const r = await fetch("/api/v2/nl-qa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: rawQ, context: contextLines })
+          });
+          const data = await r.json();
+          if (gEl) gEl.innerHTML = `<strong>Gemma:</strong> ${esc(data.answer || data.detail || "No response from local model.")}`;
+        } catch (err) {
+          if (gEl) gEl.textContent = "Local Gemma endpoint unavailable; showing graph-grounded matches above.";
+        }
       }
     }
 
@@ -1291,12 +1437,18 @@
       ctx.fillStyle = "#065f46"; ctx.fillText("KPIs / METRICS", W * 0.50, 26);
       ctx.fillStyle = "#6b21a8"; ctx.fillText("INTERVENTIONS", W * 0.84, 26);
 
+      const hasHl = !!(v2NlHighlightIds && v2NlHighlightIds.size);
+
       // Edges
-      ctx.strokeStyle = "rgba(124, 58, 237, 0.22)";
-      ctx.lineWidth = 1.4;
       v2Graph.edges.forEach(e => {
-        const a = pos.get(eSrc(e)), b = pos.get(eTgt(e));
+        const sId = eSrc(e), tId = eTgt(e);
+        const a = pos.get(sId), b = pos.get(tId);
         if (!a || !b) return;
+        const activeEdge = !hasHl || (v2NlHighlightIds.has(sId) && v2NlHighlightIds.has(tId));
+        ctx.strokeStyle = activeEdge
+          ? (hasHl ? "rgba(124, 58, 237, 0.78)" : "rgba(124, 58, 237, 0.22)")
+          : "rgba(148, 163, 184, 0.10)";
+        ctx.lineWidth = activeEdge && hasHl ? 2.4 : 1.4;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         const mx = (a.x + b.x) / 2;
@@ -1306,6 +1458,8 @@
 
       // Nodes
       pos.forEach(({ x, y, node }) => {
+        const nid = String(node.id);
+        const isHl = !hasHl || v2NlHighlightIds.has(nid);
         const t = nType(node);
         const color = t.includes("dim") ? "#4338ca" : (t.includes("kpi") ? "#059669" : "#7c3aed");
         const label = nName(node).slice(0, 32) + (nName(node).length > 32 ? "..." : "");
@@ -1313,9 +1467,11 @@
         const tw = Math.min(230, ctx.measureText(label).width + 26);
         const rx = x - tw / 2, ry = y - 14;
 
-        ctx.fillStyle = "#ffffff";
+        ctx.save();
+        ctx.globalAlpha = isHl ? 1.0 : 0.22;
+        ctx.fillStyle = hasHl && isHl ? "#f5f3ff" : "#ffffff";
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = hasHl && isHl ? 2.5 : 1.5;
         ctx.beginPath();
         ctx.roundRect(rx, ry, tw, 28, 14);
         ctx.fill();
@@ -1325,6 +1481,7 @@
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(label, x, y);
+        ctx.restore();
       });
     }
 
@@ -1512,5 +1669,6 @@
       goScreen("landing");
     }
   </script>
+<script src="/static/lip_admin_omni.js"></script>
 </body>
 </html>
