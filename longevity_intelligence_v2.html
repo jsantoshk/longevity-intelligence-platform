@@ -704,12 +704,12 @@
                 <button id="v2-gv-canvas" class="seg-btn" onclick="setV2GraphMode('graph')">Graph View</button>
               </div>
 
-              <select id="v2-dim-select" class="input" style="width:auto;max-width:260px;padding:7px 10px;font-size:13px;" onchange="renderV2Graph()">
+              <select id="v2-dim-select" class="input" style="width:auto;max-width:260px;padding:7px 10px;font-size:13px;" onchange="v2Graph.page=1;renderV2Graph()">
                 <option value="__all__">All Dimensions</option>
               </select>
 
               <input id="v2-graph-search" class="input" style="flex:1;min-width:200px;padding:7px 12px;font-size:13px;"
-                     placeholder="Search dimensions, KPIs, interventions..." oninput="renderV2Graph()" />
+                     placeholder="Search dimensions, KPIs, interventions..." oninput="v2Graph.page=1;renderV2Graph()" />
 
               <div class="seg-group">
                 <button id="v2-gf-all" class="seg-btn active" onclick="setV2GraphFilter('all')">All</button>
@@ -1201,8 +1201,16 @@
 
     function setV2GraphFilter(f) {
       v2Graph.filter = f;
+      v2Graph.page = 1;
       ["all","chains","gaps"].forEach(k => document.getElementById("v2-gf-" + k).classList.toggle("active", k === f));
       renderV2Graph();
+    }
+
+    function setV2GraphPage(p) {
+      v2Graph.page = Math.max(1, p);
+      renderV2Graph();
+      const wrap = document.getElementById("v2-table-wrap");
+      if (wrap) wrap.scrollTop = 0;
     }
 
     function getV2ScopedNodes() {
@@ -1256,17 +1264,32 @@
           tWrap.innerHTML = `<div style="padding:28px;text-align:center;color:var(--ink-muted);">No matching KPIs found.</div>`;
           return;
         }
+        const pageSize = 20;
+        const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+        v2Graph.page = Math.min(Math.max(1, v2Graph.page || 1), totalPages);
+        const startIdx = (v2Graph.page - 1) * pageSize;
+        const pageRows = rows.slice(startIdx, startIdx + pageSize);
+        const fromNum = startIdx + 1;
+        const toNum = startIdx + pageRows.length;
+
         tWrap.innerHTML = `<table class="data-table">
           <thead><tr><th>Dimension</th><th>KPI / Metric (${rows.length})</th><th>Interventions</th><th style="width:100px;">Status</th></tr></thead>
           <tbody>
-            ${rows.map(r => `<tr style="${v2RowStyle(r)}">
+            ${pageRows.map(r => `<tr style="${v2RowStyle(r)}">
               <td style="font-weight:700;color:#3730a3;">${r.dims.length ? r.dims.map(d => esc(nName(d))).join(", ") : '<span style="color:#94a3b8;">Unlinked</span>'}</td>
               <td style="font-weight:600;">${esc(nName(r.kpi))}</td>
               <td style="color:var(--ink-muted);">${r.ints.length ? r.ints.map(i => esc(nName(i))).join("; ") : '<span style="color:#94a3b8;">None yet</span>'}</td>
               <td>${r.isGap ? '<span class="badge badge-gap">Gap</span>' : '<span class="badge badge-ok">Complete</span>'}</td>
             </tr>`).join("")}
           </tbody>
-        </table>`;
+        </table>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 4px 2px;font-size:13px;color:var(--ink-muted);">
+          <span>Showing ${fromNum}–${toNum} of ${rows.length} (Page ${v2Graph.page} of ${totalPages})</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary btn-sm" ${v2Graph.page <= 1 ? "disabled" : ""} onclick="setV2GraphPage(${v2Graph.page - 1})">Prev</button>
+            <button class="btn btn-secondary btn-sm" ${v2Graph.page >= totalPages ? "disabled" : ""} onclick="setV2GraphPage(${v2Graph.page + 1})">Next</button>
+          </div>
+        </div>`;
       } else {
         tWrap.style.display = "none";
         canvas.style.display = "block";
