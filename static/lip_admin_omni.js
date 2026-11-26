@@ -6,6 +6,7 @@
     grItems: [],
     editingId: null,
     channel: "whatsapp",
+    agentId: "",
     histories: { mobile: [], whatsapp: [], email: [], sms: [] },
     lastMeta: null,
   };
@@ -137,7 +138,12 @@
           <h2 class="lip-ao-title">Omnichannel Mock Interface</h2>
           <p class="lip-ao-sub">Prototype testbench — preview how LIP adapts tone, length, and guardrails across channels.</p>
         </div>
-        <button id="lip-omni-clear" class="lip-ao-btn-ghost">Clear Channel</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="lip-omni-agent" class="lip-ao-input" style="width:250px;">
+            <option value="">Default LIP Advisor</option>
+          </select>
+          <button id="lip-omni-clear" class="lip-ao-btn-ghost">Clear Channel</button>
+        </div>
       </div>
       <div class="lip-omni-tabs" id="lip-omni-tabs">
         <button class="lip-omni-tab active" data-ch="whatsapp">WhatsApp</button>
@@ -211,6 +217,21 @@
       : `<div style="font-size:12.5px;color:#645c7a;">No active guardrails enabled.</div>`;
   }
 
+  async function loadOmniAgents() {
+    const sel = document.getElementById("lip-omni-agent");
+    if (!sel) return;
+    try {
+      const res = await fetch("/api/admin/agents?page=1&page_size=50");
+      const data = await res.json();
+      const active = (data.items || []).filter((a) => a.status === "active");
+      const opts = ['<option value="">Default LIP Advisor (No Persona)</option>'].concat(
+        active.map((a) => `<option value="${a.id}">${esc(a.name)}${a.persona_name ? " — " + esc(a.persona_name) : ""}</option>`)
+      );
+      sel.innerHTML = opts.join("");
+      sel.value = STATE.agentId || "";
+    } catch {}
+  }
+
   function renderOmniMessages() {
     const titles = {
       whatsapp: "WhatsApp Business Mock — LIP Advisor",
@@ -242,7 +263,7 @@
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, channel: ch }),
+        body: JSON.stringify({ message: text, channel: ch, agent_id: STATE.agentId ? Number(STATE.agentId) : null }),
       });
       const data = await res.json();
       STATE.histories[ch][STATE.histories[ch].length - 1] = {
@@ -250,6 +271,7 @@
         text: data.reply || data.detail || "No reply returned.",
       };
       document.getElementById("lip-omni-meta").innerHTML =
+        `<strong>Agent:</strong> ${esc(data.agent_name || "Default LIP Advisor")} (${esc(data.persona_name || "Standard")})<br>` +
         `<strong>Channel:</strong> ${esc(data.channel || ch)} &nbsp;|&nbsp; <strong>Semantic hits:</strong> ${data.semantic_hits ?? 0}<br>` +
         `<strong>Applied Guardrails:</strong> ${(data.applied_guardrails || []).map(esc).join(", ") || "None"}`;
     } catch (e) {
@@ -323,6 +345,7 @@
     document.getElementById("lip-omni-send").onclick = sendOmniMessage;
     document.getElementById("lip-omni-input").onkeydown = (e) => { if (e.key === "Enter") sendOmniMessage(); };
     document.getElementById("lip-omni-clear").onclick = () => { STATE.histories[STATE.channel] = []; renderOmniMessages(); };
+    document.getElementById("lip-omni-agent").onchange = (e) => { STATE.agentId = e.target.value; };
   }
 
   function hookSwitchView() {
@@ -331,7 +354,7 @@
     window.switchView = function (view) {
       orig(view);
       if (view === "guardrails") loadGuardrails();
-      if (view === "omnichannel") { loadOmniGuardrails(); renderOmniMessages(); }
+      if (view === "omnichannel") { loadOmniGuardrails(); loadOmniAgents(); renderOmniMessages(); }
     };
   }
 
