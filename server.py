@@ -1962,6 +1962,90 @@ def assign_kb_document_folder(sha256: str, body: KbAssignPayload):
         conn.commit()
     return {"sha256": sha256, "folder_id": body.folder_id}
 
+
+@app.get("/static/lip_dashboard.js")
+def serve_dashboard_js():
+    js_path = ROOT / "static" / "lip_dashboard.js"
+    if not js_path.exists():
+        raise HTTPException(status_code=404, detail="lip_dashboard.js not found")
+    return FileResponse(js_path, media_type="application/javascript")
+
+
+@app.get("/api/admin/analytics")
+def get_admin_analytics():
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        doc_count = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        total_pages = conn.execute("SELECT COALESCE(SUM(page_count), 0) FROM documents").fetchone()[0]
+        dim_count = conn.execute("SELECT COUNT(*) FROM dimensions").fetchone()[0]
+        kpi_count = conn.execute("SELECT COUNT(*) FROM kpis").fetchone()[0]
+        int_count = conn.execute("SELECT COUNT(*) FROM interventions").fetchone()[0]
+
+        folder_count = conn.execute("SELECT COUNT(*) FROM lip_kb_folders").fetchone()[0]
+        filed_docs = conn.execute("SELECT COUNT(*) FROM lip_kb_doc_folders WHERE folder_id IS NOT NULL").fetchone()[0]
+
+        gr_total = conn.execute("SELECT COUNT(*) FROM lip_guardrails").fetchone()[0]
+        gr_active = conn.execute("SELECT COUNT(*) FROM lip_guardrails WHERE enabled = TRUE").fetchone()[0]
+
+        user_count = conn.execute("SELECT COUNT(*) FROM lip_users").fetchone()[0]
+        persona_count = conn.execute("SELECT COUNT(*) FROM lip_personas").fetchone()[0]
+        agent_total = conn.execute("SELECT COUNT(*) FROM lip_agents").fetchone()[0]
+        agent_active = conn.execute("SELECT COUNT(*) FROM lip_agents WHERE status = 'active'").fetchone()[0]
+
+        folder_breakdown = conn.execute(
+            """
+            SELECT f.name, COUNT(m.document_sha256) AS cnt
+            FROM lip_kb_folders f
+            LEFT JOIN lip_kb_doc_folders m ON m.folder_id = f.id
+            GROUP BY f.id, f.name
+            ORDER BY cnt DESC, f.name ASC
+            """
+        ).fetchall()
+
+        recent_docs = conn.execute(
+            """
+            SELECT doc.path, doc.page_count, doc.created_at, COALESCE(f.name, 'Unfiled')
+            FROM documents doc
+            LEFT JOIN lip_kb_doc_folders m ON m.document_sha256 = doc.sha256
+            LEFT JOIN lip_kb_folders f ON f.id = m.folder_id
+            ORDER BY doc.created_at DESC
+            LIMIT 6
+            """
+        ).fetchall()
+
+    return {
+        "knowledge": {
+            "documents": doc_count,
+            "total_pages": total_pages,
+            "folders": folder_count,
+            "filed_documents": filed_docs,
+            "unfiled_documents": max(0, doc_count - filed_docs),
+        },
+        "graph": {
+            "dimensions": dim_count,
+            "kpis": kpi_count,
+            "interventions": int_count,
+        },
+        "governance": {
+            "guardrails_active": gr_active,
+            "guardrails_total": gr_total,
+            "agents_active": agent_active,
+            "agents_total": agent_total,
+            "personas": persona_count,
+            "users": user_count,
+        },
+        "folder_breakdown": [{"name": r[0], "count": r[1]} for r in folder_breakdown],
+        "recent_documents": [
+            {
+                "name": _clean_doc_name(r[0]),
+                "pages": r[1] or 0,
+                "created_at": r[2].isoformat() if r[2] else None,
+                "folder": r[3],
+            }
+            for r in recent_docs
+        ],
+    }
+
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     message = body.message.strip()
