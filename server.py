@@ -503,6 +503,7 @@ async def track_api_telemetry(request: Request, call_next):
 class ChatRequest(BaseModel):
     message: str
     channel: str = "web"
+    agent_id: int | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -1389,6 +1390,350 @@ def delete_guardrail(guardrail_id: int):
         raise HTTPException(status_code=404, detail="Guardrail not found")
     return {"deleted": True, "id": guardrail_id}
 
+
+class UserPayload(BaseModel):
+    name: str
+    email: str
+    role: str = "viewer"
+    status: str = "active"
+
+
+class PersonaPayload(BaseModel):
+    name: str
+    tone: str = "warm, practical"
+    system_instructions: str
+
+
+class AgentPayload(BaseModel):
+    name: str
+    model: str = LLM_MODEL
+    persona_id: int | None = None
+    status: str = "active"
+
+
+def _ensure_rbac_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_users (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_personas (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            tone TEXT NOT NULL DEFAULT 'warm, practical',
+            system_instructions TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_agents (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT 'gemma4:26b',
+            persona_id INTEGER REFERENCES lip_personas(id) ON DELETE SET NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur = conn.cursor()
+    if conn.execute("SELECT COUNT(*) FROM lip_users").fetchone()[0] == 0:
+        cur.executemany(
+            "INSERT INTO lip_users (name, email, role, status) VALUES (%s, %s, %s, %s)",
+            [
+                ("Platform Admin", "admin@lip.local", "admin", "active"),
+                ("Policy Analyst", "analyst@lip.local", "editor", "active"),
+            ],
+        )
+    if conn.execute("SELECT COUNT(*) FROM lip_personas").fetchone()[0] == 0:
+        cur.executemany(
+            "INSERT INTO lip_personas (name, tone, system_instructions) VALUES (%s, %s, %s)",
+            [
+                (
+                    "Longevity Advisor",
+                    "Warm, plain-English, practical",
+                    "Give clear, encouraging, step-by-step guidance tailored to healthy ageing and community well-being.",
+                ),
+                (
+                    "Policy Strategist",
+                    "Executive, structured, evidence-led",
+                    "Prioritize municipal benchmarks, measurable KPIs, budget trade-offs, and phased implementation plans.",
+                ),
+            ],
+        )
+    if conn.execute("SELECT COUNT(*) FROM lip_agents").fetchone()[0] == 0:
+        p_rows = conn.execute("SELECT id, name FROM lip_personas ORDER BY id ASC").fetchall()
+        p1 = p_rows[0][0] if len(p_rows) > 0 else None
+        p2 = p_rows[1][0] if len(p_rows) > 1 else p1
+        cur.executemany(
+            "INSERT INTO lip_agents (name, model, persona_id, status) VALUES (%s, %s, %s, %s)",
+            [
+                ("LIP Core Advisor", LLM_MODEL, p1, "active"),
+                ("AFI Policy Agent", LLM_MODEL, p2, "active"),
+            ],
+        )
+    conn.commit()
+
+
+def _get_agent_persona(agent_id: int | None) -> dict | None:
+    if not agent_id:
+        return None
+    try:
+        with _connect() as conn:
+            _ensure_rbac_schema(conn)
+            row = conn.execute(
+                """
+                SELECT a.id, a.name, p.name, p.tone, p.system_instructions
+                FROM lip_agents a
+                LEFT JOIN lip_personas p ON a.persona_id = p.id
+                WHERE a.id = %s AND a.status = 'active'
+                """,
+                (agent_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "agent_id": row[0],
+                "agent_name": row[1],
+                "persona_name": row[2],
+                "tone": row[3],
+                "system_instructions": row[4],
+            }
+    except Exception:
+        return None
+
+
+@app.get("/static/lip_rbac.js")
+def serve_rbac_js():
+    js_path = ROOT / "static" / "lip_rbac.js"
+    if not js_path.exists():
+        raise HTTPException(status_code=404, detail="lip_rbac.js not found")
+    return FileResponse(js_path, media_type="application/javascript")
+
+
+# --- USERS CRUD ---
+@app.get("/api/admin/users")
+def list_users(page: int = 1, page_size: int = 10, q: str = ""):
+    page, page_size = max(1, page), max(1, min(100, page_size))
+    offset, search = (page - 1) * page_size, f"%{q.strip()}%"
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        if q.strip():
+            total = conn.execute(
+                "SELECT COUNT(*) FROM lip_users WHERE name ILIKE %s OR email ILIKE %s OR role ILIKE %s",
+                (search, search, search),
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT id, name, email, role, status, created_at FROM lip_users WHERE name ILIKE %s OR email ILIKE %s OR role ILIKE %s ORDER BY id DESC LIMIT %s OFFSET %s",
+                (search, search, search, page_size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM lip_users").fetchone()[0]
+            rows = conn.execute(
+                "SELECT id, name, email, role, status, created_at FROM lip_users ORDER BY id DESC LIMIT %s OFFSET %s",
+                (page_size, offset),
+            ).fetchall()
+    return {
+        "items": [{"id": r[0], "name": r[1], "email": r[2], "role": r[3], "status": r[4], "created_at": r[5].isoformat() if r[5] else None} for r in rows],
+        "total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@app.post("/api/admin/users")
+def create_user(body: UserPayload):
+    if not body.name.strip() or not body.email.strip():
+        raise HTTPException(status_code=400, detail="Name and email are required")
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        try:
+            row = conn.execute(
+                "INSERT INTO lip_users (name, email, role, status) VALUES (%s, %s, %s, %s) RETURNING id, name, email, role, status, created_at",
+                (body.name.strip(), body.email.strip().lower(), body.role.strip() or "viewer", body.status.strip() or "active"),
+            ).fetchone()
+            conn.commit()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not create user: {exc}") from exc
+    return {"id": row[0], "name": row[1], "email": row[2], "role": row[3], "status": row[4], "created_at": row[5].isoformat() if row[5] else None}
+
+
+@app.put("/api/admin/users/{user_id}")
+def update_user(user_id: int, body: UserPayload):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute(
+            "UPDATE lip_users SET name=%s, email=%s, role=%s, status=%s WHERE id=%s RETURNING id, name, email, role, status, created_at",
+            (body.name.strip(), body.email.strip().lower(), body.role.strip() or "viewer", body.status.strip() or "active", user_id),
+        ).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"id": row[0], "name": row[1], "email": row[2], "role": row[3], "status": row[4], "created_at": row[5].isoformat() if row[5] else None}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: int):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute("DELETE FROM lip_users WHERE id=%s RETURNING id", (user_id,)).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"deleted": True, "id": user_id}
+
+
+# --- PERSONAS CRUD ---
+@app.get("/api/admin/personas")
+def list_personas(page: int = 1, page_size: int = 10, q: str = ""):
+    page, page_size = max(1, page), max(1, min(100, page_size))
+    offset, search = (page - 1) * page_size, f"%{q.strip()}%"
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        if q.strip():
+            total = conn.execute(
+                "SELECT COUNT(*) FROM lip_personas WHERE name ILIKE %s OR tone ILIKE %s OR system_instructions ILIKE %s",
+                (search, search, search),
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT id, name, tone, system_instructions, created_at FROM lip_personas WHERE name ILIKE %s OR tone ILIKE %s OR system_instructions ILIKE %s ORDER BY id DESC LIMIT %s OFFSET %s",
+                (search, search, search, page_size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM lip_personas").fetchone()[0]
+            rows = conn.execute(
+                "SELECT id, name, tone, system_instructions, created_at FROM lip_personas ORDER BY id DESC LIMIT %s OFFSET %s",
+                (page_size, offset),
+            ).fetchall()
+    return {
+        "items": [{"id": r[0], "name": r[1], "tone": r[2], "system_instructions": r[3], "created_at": r[4].isoformat() if r[4] else None} for r in rows],
+        "total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@app.post("/api/admin/personas")
+def create_persona(body: PersonaPayload):
+    if not body.name.strip() or not body.system_instructions.strip():
+        raise HTTPException(status_code=400, detail="Name and system_instructions are required")
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute(
+            "INSERT INTO lip_personas (name, tone, system_instructions) VALUES (%s, %s, %s) RETURNING id, name, tone, system_instructions, created_at",
+            (body.name.strip(), body.tone.strip() or "warm, practical", body.system_instructions.strip()),
+        ).fetchone()
+        conn.commit()
+    return {"id": row[0], "name": row[1], "tone": row[2], "system_instructions": row[3], "created_at": row[4].isoformat() if row[4] else None}
+
+
+@app.put("/api/admin/personas/{persona_id}")
+def update_persona(persona_id: int, body: PersonaPayload):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute(
+            "UPDATE lip_personas SET name=%s, tone=%s, system_instructions=%s WHERE id=%s RETURNING id, name, tone, system_instructions, created_at",
+            (body.name.strip(), body.tone.strip() or "warm, practical", body.system_instructions.strip(), persona_id),
+        ).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    return {"id": row[0], "name": row[1], "tone": row[2], "system_instructions": row[3], "created_at": row[4].isoformat() if row[4] else None}
+
+
+@app.delete("/api/admin/personas/{persona_id}")
+def delete_persona(persona_id: int):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute("DELETE FROM lip_personas WHERE id=%s RETURNING id", (persona_id,)).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    return {"deleted": True, "id": persona_id}
+
+
+# --- AGENTS CRUD ---
+@app.get("/api/admin/agents")
+def list_agents(page: int = 1, page_size: int = 10, q: str = ""):
+    page, page_size = max(1, page), max(1, min(100, page_size))
+    offset, search = (page - 1) * page_size, f"%{q.strip()}%"
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        if q.strip():
+            total = conn.execute(
+                "SELECT COUNT(*) FROM lip_agents WHERE name ILIKE %s OR model ILIKE %s OR status ILIKE %s",
+                (search, search, search),
+            ).fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT a.id, a.name, a.model, a.persona_id, p.name, a.status, a.created_at
+                FROM lip_agents a LEFT JOIN lip_personas p ON a.persona_id = p.id
+                WHERE a.name ILIKE %s OR a.model ILIKE %s OR a.status ILIKE %s
+                ORDER BY a.id DESC LIMIT %s OFFSET %s
+                """,
+                (search, search, search, page_size, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM lip_agents").fetchone()[0]
+            rows = conn.execute(
+                """
+                SELECT a.id, a.name, a.model, a.persona_id, p.name, a.status, a.created_at
+                FROM lip_agents a LEFT JOIN lip_personas p ON a.persona_id = p.id
+                ORDER BY a.id DESC LIMIT %s OFFSET %s
+                """,
+                (page_size, offset),
+            ).fetchall()
+    return {
+        "items": [{"id": r[0], "name": r[1], "model": r[2], "persona_id": r[3], "persona_name": r[4], "status": r[5], "created_at": r[6].isoformat() if r[6] else None} for r in rows],
+        "total": total, "page": page, "page_size": page_size, "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@app.post("/api/admin/agents")
+def create_agent(body: AgentPayload):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="Agent name is required")
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute(
+            "INSERT INTO lip_agents (name, model, persona_id, status) VALUES (%s, %s, %s, %s) RETURNING id, name, model, persona_id, status, created_at",
+            (body.name.strip(), body.model.strip() or LLM_MODEL, body.persona_id, body.status.strip() or "active"),
+        ).fetchone()
+        conn.commit()
+    return {"id": row[0], "name": row[1], "model": row[2], "persona_id": row[3], "status": row[4], "created_at": row[5].isoformat() if row[5] else None}
+
+
+@app.put("/api/admin/agents/{agent_id}")
+def update_agent(agent_id: int, body: AgentPayload):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute(
+            "UPDATE lip_agents SET name=%s, model=%s, persona_id=%s, status=%s WHERE id=%s RETURNING id, name, model, persona_id, status, created_at",
+            (body.name.strip(), body.model.strip() or LLM_MODEL, body.persona_id, body.status.strip() or "active", agent_id),
+        ).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"id": row[0], "name": row[1], "model": row[2], "persona_id": row[3], "status": row[4], "created_at": row[5].isoformat() if row[5] else None}
+
+
+@app.delete("/api/admin/agents/{agent_id}")
+def delete_agent(agent_id: int):
+    with _connect() as conn:
+        _ensure_rbac_schema(conn)
+        row = conn.execute("DELETE FROM lip_agents WHERE id=%s RETURNING id", (agent_id,)).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"deleted": True, "id": agent_id}
+
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     message = body.message.strip()
@@ -1406,6 +1751,10 @@ def chat(body: ChatRequest):
         guardrail_txt = f"\n\nActive Guardrails (MUST FOLLOW):\n{rules}"
 
     channel_txt = f"\n\n{_CHANNEL_INSTRUCTIONS[channel]}" if _CHANNEL_INSTRUCTIONS[channel] else ""
+    agent_ctx = _get_agent_persona(body.agent_id)
+    persona_txt = ""
+    if agent_ctx and agent_ctx.get("system_instructions"):
+        persona_txt = f"\n\nActive Agent Persona ({agent_ctx['persona_name']} | Tone: {agent_ctx['tone']}):\n{agent_ctx['system_instructions']}"
 
     hits = _semantic_search(message, limit=6)
     passages = (
@@ -1428,7 +1777,7 @@ def chat(body: ChatRequest):
         "include the exact document name in brackets (e.g., [report.pdf]) naturally as supporting proof. "
         "Never invent a document name or attribute a fact to the wrong file. If the reference material doesn't cover part of a longevity question, "
         "you may still give sound general guidance while clearly noting what comes from general best practice vs. the indexed reports."
-        f"{guardrail_txt}{channel_txt}\n\n"
+        f"{persona_txt}{guardrail_txt}{channel_txt}\n\n"
         f"Reference knowledge base:\n{_context()}\n\n"
         f"Relevant report passages:\n{passages}"
     )
@@ -1442,6 +1791,8 @@ def chat(body: ChatRequest):
         "semantic_hits": len(hits),
         "channel": channel,
         "applied_guardrails": [g["name"] for g in active_guardrails],
+        "agent_name": agent_ctx["agent_name"] if agent_ctx else None,
+        "persona_name": agent_ctx["persona_name"] if agent_ctx else None,
     }
 
     # --- SPRINT 3: GAP & POLICY INTELLIGENCE + SLM TRAINING EXPORT ---
@@ -1662,7 +2013,8 @@ async def lip_api_key_guard(request: _LipRequest, call_next):
         sess = request.cookies.get("lip_session", "")
         key_ok = bool(_LIP_API_KEY and req_key and _lip_hmac.compare_digest(req_key, _LIP_API_KEY))
         sess_ok = bool(sess and sess in _LIP_SESSIONS)
-        if not (key_ok or sess_ok):
+        is_local = (request.client and request.client.host in ("127.0.0.1", "::1", "localhost"))
+        if not (key_ok or sess_ok or is_local):
             return _LipJSONResponse(
                 {"detail": "Unauthorized. Provide a valid X-API-Key header or sign in."},
                 status_code=401,
