@@ -1734,6 +1734,234 @@ def delete_agent(agent_id: int):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"deleted": True, "id": agent_id}
 
+
+class KbFolderPayload(BaseModel):
+    name: str
+    description: str = ""
+
+
+class KbAssignPayload(BaseModel):
+    folder_id: int | None = None
+
+
+def _ensure_kb_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_kb_folders (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS lip_kb_doc_folders (
+            document_sha256 TEXT PRIMARY KEY,
+            folder_id INTEGER REFERENCES lip_kb_folders(id) ON DELETE SET NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    if conn.execute("SELECT COUNT(*) FROM lip_kb_folders").fetchone()[0] == 0:
+        cur = conn.cursor()
+        cur.executemany(
+            "INSERT INTO lip_kb_folders (name, description) VALUES (%s, %s)",
+            [
+                ("Policy & Strategy", "National and municipal healthy ageing frameworks."),
+                ("Clinical & Ageing", "Longevity research, care models, and clinical guidelines."),
+                ("Municipal Benchmarks", "City-level KPIs, AFI reports, and implementation playbooks."),
+            ],
+        )
+    conn.commit()
+
+
+@app.get("/static/lip_kb.js")
+def serve_kb_js():
+    js_path = ROOT / "static" / "lip_kb.js"
+    if not js_path.exists():
+        raise HTTPException(status_code=404, detail="lip_kb.js not found")
+    return FileResponse(js_path, media_type="application/javascript")
+
+
+@app.get("/api/admin/kb/folders")
+def list_kb_folders():
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT f.id, f.name, f.description, f.created_at,
+                   COUNT(m.document_sha256) AS doc_count
+            FROM lip_kb_folders f
+            LEFT JOIN lip_kb_doc_folders m ON m.folder_id = f.id
+            GROUP BY f.id
+            ORDER BY f.name ASC
+            """
+        ).fetchall()
+        total_docs = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        assigned_docs = conn.execute(
+            "SELECT COUNT(*) FROM lip_kb_doc_folders WHERE folder_id IS NOT NULL"
+        ).fetchone()[0]
+    return {
+        "folders": [
+            {
+                "id": r[0],
+                "name": r[1],
+                "description": r[2],
+                "created_at": r[3].isoformat() if r[3] else None,
+                "doc_count": r[4],
+            }
+            for r in rows
+        ],
+        "total_docs": total_docs,
+        "unfiled_docs": max(0, total_docs - assigned_docs),
+    }
+
+
+@app.post("/api/admin/kb/folders")
+def create_kb_folder(body: KbFolderPayload):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        try:
+            row = conn.execute(
+                "INSERT INTO lip_kb_folders (name, description) VALUES (%s, %s) RETURNING id, name, description, created_at",
+                (name, body.description.strip()),
+            ).fetchone()
+            conn.commit()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not create folder: {exc}") from exc
+    return {"id": row[0], "name": row[1], "description": row[2], "created_at": row[3].isoformat() if row[3] else None, "doc_count": 0}
+
+
+@app.put("/api/admin/kb/folders/{folder_id}")
+def update_kb_folder(folder_id: int, body: KbFolderPayload):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Folder name is required")
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        try:
+            row = conn.execute(
+                "UPDATE lip_kb_folders SET name=%s, description=%s WHERE id=%s RETURNING id, name, description, created_at",
+                (name, body.description.strip(), folder_id),
+            ).fetchone()
+            conn.commit()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Could not update folder: {exc}") from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return {"id": row[0], "name": row[1], "description": row[2], "created_at": row[3].isoformat() if row[3] else None}
+
+
+@app.delete("/api/admin/kb/folders/{folder_id}")
+def delete_kb_folder(folder_id: int):
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        row = conn.execute("DELETE FROM lip_kb_folders WHERE id=%s RETURNING id", (folder_id,)).fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return {"deleted": True, "id": folder_id}
+
+
+@app.get("/api/admin/kb/documents")
+def list_kb_documents(page: int = 1, page_size: int = 20, q: str = "", folder_id: str = ""):
+    page, page_size = max(1, page), max(1, min(100, page_size))
+    offset = (page - 1) * page_size
+    where_clauses = []
+    params = []
+
+    if folder_id == "unfiled":
+        where_clauses.append("m.folder_id IS NULL")
+    elif folder_id.isdigit():
+        where_clauses.append("m.folder_id = %s")
+        params.append(int(folder_id))
+
+    if q.strip():
+        like = f"%{q.strip()}%"
+        where_clauses.append("(doc.path ILIKE %s OR COALESCE(doc.city,'') ILIKE %s OR COALESCE(doc.country,'') ILIKE %s OR COALESCE(doc.sector,'') ILIKE %s)")
+        params.extend([like, like, like, like])
+
+    where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        total = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM documents doc
+            LEFT JOIN lip_kb_doc_folders m ON m.document_sha256 = doc.sha256
+            {where_sql}
+            """,
+            tuple(params),
+        ).fetchone()[0]
+
+        rows = conn.execute(
+            f"""
+            SELECT doc.sha256, doc.path, doc.page_count, doc.created_at,
+                   doc.city, doc.country, doc.sector,
+                   m.folder_id, f.name,
+                   (SELECT count(*) FROM dimensions d WHERE d.document_sha256 = doc.sha256),
+                   (SELECT count(*) FROM kpis k WHERE k.document_sha256 = doc.sha256),
+                   (SELECT count(*) FROM interventions i WHERE i.document_sha256 = doc.sha256)
+            FROM documents doc
+            LEFT JOIN lip_kb_doc_folders m ON m.document_sha256 = doc.sha256
+            LEFT JOIN lip_kb_folders f ON f.id = m.folder_id
+            {where_sql}
+            ORDER BY doc.created_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            tuple(params + [page_size, offset]),
+        ).fetchall()
+
+    return {
+        "items": [
+            {
+                "sha256": r[0],
+                "name": _clean_doc_name(r[1]),
+                "pages": r[2],
+                "created_at": r[3].isoformat() if r[3] else None,
+                "city": r[4],
+                "country": r[5],
+                "sector": r[6],
+                "folder_id": r[7],
+                "folder_name": r[8],
+                "dimensions": r[9],
+                "kpis": r[10],
+                "interventions": r[11],
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+@app.put("/api/admin/kb/documents/{sha256}/folder")
+def assign_kb_document_folder(sha256: str, body: KbAssignPayload):
+    with _connect() as conn:
+        _ensure_kb_schema(conn)
+        if body.folder_id is None:
+            conn.execute("DELETE FROM lip_kb_doc_folders WHERE document_sha256 = %s", (sha256,))
+        else:
+            conn.execute(
+                """
+                INSERT INTO lip_kb_doc_folders (document_sha256, folder_id, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (document_sha256)
+                DO UPDATE SET folder_id = EXCLUDED.folder_id, updated_at = NOW()
+                """,
+                (sha256, body.folder_id),
+            )
+        conn.commit()
+    return {"sha256": sha256, "folder_id": body.folder_id}
+
 @app.post("/api/chat")
 def chat(body: ChatRequest):
     message = body.message.strip()
