@@ -52,6 +52,19 @@
       .lip-omni-bubble.bot { align-self:flex-start; background:#fff; color:#1f1635; border:1px solid #e6e1f2; border-bottom-left-radius:3px; }
       .lip-omni-input-row { display:flex; gap:8px; padding:12px; background:#fff; border-top:1px solid #e6e1f2; }
       .lip-gr-pill { display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:8px; background:#f5f2fc; border:1px solid #e6e1f2; font-size:12.5px; margin-bottom:6px; color:#3b1c7a; }
+      .lip-agent-picker { position:relative; display:inline-block; }
+      .lip-agent-trigger { display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid #dfd7f5; border-radius:999px; padding:7px 14px; font-size:13px; font-weight:600; color:#1f1635; cursor:pointer; transition:border-color .15s, box-shadow .15s; font-family:inherit; }
+      .lip-agent-trigger:hover, .lip-agent-picker.open .lip-agent-trigger { border-color:#6d28d9; box-shadow:0 0 0 3px rgba(109,40,217,.1); }
+      .lip-agent-dot { width:8px; height:8px; border-radius:50%; background:#6d28d9; flex-shrink:0; }
+      .lip-agent-tag { font-size:11.5px; font-weight:500; color:#645c7a; background:#f5f2fc; padding:2px 8px; border-radius:999px; }
+      .lip-agent-menu { position:absolute; right:0; top:calc(100% + 6px); min-width:270px; background:#fff; border:1px solid #e6e1f2; border-radius:12px; box-shadow:0 12px 28px rgba(31,22,53,.14); padding:6px; display:none; z-index:200; }
+      .lip-agent-picker.open .lip-agent-menu { display:block; }
+      .lip-agent-opt { display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; background:transparent; border:none; border-radius:8px; padding:9px 11px; cursor:pointer; font-family:inherit; }
+      .lip-agent-opt:hover { background:#f5f2fc; }
+      .lip-agent-opt.active { background:#ede9fe; }
+      .lip-agent-opt-name { font-size:13px; font-weight:600; color:#1f1635; display:block; }
+      .lip-agent-opt-sub { font-size:11.5px; color:#645c7a; display:block; margin-top:1px; }
+      .lip-agent-check { color:#6d28d9; font-weight:700; font-size:13px; }
     `;
     document.head.appendChild(style);
   }
@@ -139,9 +152,14 @@
           <p class="lip-ao-sub">Prototype testbench — preview how LIP adapts tone, length, and guardrails across channels.</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="lip-omni-agent" class="lip-ao-input" style="width:250px;">
-            <option value="">Default LIP Advisor</option>
-          </select>
+          <div id="lip-agent-picker" class="lip-agent-picker">
+            <button type="button" id="lip-agent-trigger" class="lip-agent-trigger">
+              <span class="lip-agent-dot"></span>
+              <span id="lip-agent-label">Default LIP Advisor</span>
+              <span id="lip-agent-tag" class="lip-agent-tag">Standard</span>
+            </button>
+            <div id="lip-agent-menu" class="lip-agent-menu"></div>
+          </div>
           <button id="lip-omni-clear" class="lip-ao-btn-ghost">Clear Channel</button>
         </div>
       </div>
@@ -218,18 +236,36 @@
   }
 
   async function loadOmniAgents() {
-    const sel = document.getElementById("lip-omni-agent");
-    if (!sel) return;
+    const menu = document.getElementById("lip-agent-menu");
+    if (!menu) return;
     try {
       const res = await fetch("/api/admin/agents?page=1&page_size=50");
       const data = await res.json();
       const active = (data.items || []).filter((a) => a.status === "active");
-      const opts = ['<option value="">Default LIP Advisor (No Persona)</option>'].concat(
-        active.map((a) => `<option value="${a.id}">${esc(a.name)}${a.persona_name ? " — " + esc(a.persona_name) : ""}</option>`)
-      );
-      sel.innerHTML = opts.join("");
-      sel.value = STATE.agentId || "";
+      STATE.agentsList = [
+        { id: "", name: "Default LIP Advisor", persona_name: "Standard" },
+        ...active.map((a) => ({ id: String(a.id), name: a.name, persona_name: a.persona_name || "Standard" })),
+      ];
+      renderAgentPicker();
     } catch {}
+  }
+
+  function renderAgentPicker() {
+    const menu = document.getElementById("lip-agent-menu");
+    const label = document.getElementById("lip-agent-label");
+    const tag = document.getElementById("lip-agent-tag");
+    if (!menu || !label || !tag) return;
+    const list = STATE.agentsList || [{ id: "", name: "Default LIP Advisor", persona_name: "Standard" }];
+    const current = list.find((a) => a.id === String(STATE.agentId || "")) || list[0];
+    label.textContent = current.name;
+    tag.textContent = current.persona_name;
+    menu.innerHTML = list.map((a) => {
+      const isAct = a.id === current.id;
+      return `<button type="button" class="lip-agent-opt ${isAct ? "active" : ""}" data-agent-id="${esc(a.id)}">
+        <span><span class="lip-agent-opt-name">${esc(a.name)}</span><span class="lip-agent-opt-sub">${esc(a.persona_name)}</span></span>
+        ${isAct ? '<span class="lip-agent-check">&#10003;</span>' : ""}
+      </button>`;
+    }).join("");
   }
 
   function renderOmniMessages() {
@@ -345,7 +381,21 @@
     document.getElementById("lip-omni-send").onclick = sendOmniMessage;
     document.getElementById("lip-omni-input").onkeydown = (e) => { if (e.key === "Enter") sendOmniMessage(); };
     document.getElementById("lip-omni-clear").onclick = () => { STATE.histories[STATE.channel] = []; renderOmniMessages(); };
-    document.getElementById("lip-omni-agent").onchange = (e) => { STATE.agentId = e.target.value; };
+    const picker = document.getElementById("lip-agent-picker");
+    document.getElementById("lip-agent-trigger").onclick = (e) => {
+      e.stopPropagation();
+      picker.classList.toggle("open");
+    };
+    document.getElementById("lip-agent-menu").onclick = (e) => {
+      const opt = e.target.closest("[data-agent-id]");
+      if (!opt) return;
+      STATE.agentId = opt.dataset.agentId;
+      renderAgentPicker();
+      picker.classList.remove("open");
+    };
+    document.addEventListener("click", (e) => {
+      if (picker && !picker.contains(e.target)) picker.classList.remove("open");
+    });
   }
 
   function hookSwitchView() {
